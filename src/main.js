@@ -181,8 +181,15 @@ function startMatch() {
     const cv = document.getElementById('arena');
     renderer = new Renderer(cv);
   }
-  document.getElementById('hud-name-p1').textContent = `${p1.name} "${p1.nickname}"`;
-  document.getElementById('hud-name-p2').textContent = `${p2.name} "${p2.nickname}"`;
+  document.getElementById('hud-name-p1').textContent = p1.name;
+  document.getElementById('hud-name-p2').textContent = p2.name;
+  document.getElementById('hud-nick-p1').textContent = `"${p1.nickname}"`;
+  document.getElementById('hud-nick-p2').textContent = `"${p2.nickname}"`;
+  document.getElementById('hud-style-p1').textContent = `${p1.style} • ${p1.weightClass || ''}`.trim();
+  document.getElementById('hud-style-p2').textContent = `${p2.style} • ${p2.weightClass || ''}`.trim();
+  // Portrait mini-canvases
+  drawHudPortrait('portrait-p1', p1);
+  drawHudPortrait('portrait-p2', p2);
   show('fight');
   if (!state.loopId) loop();
 }
@@ -370,8 +377,58 @@ function updateHUD(match) {
   document.getElementById('sp-p1').style.width = `${(match.p1.special / match.p1.maxSpecial) * 100}%`;
   document.getElementById('sp-p2').style.width = `${(match.p2.special / match.p2.maxSpecial) * 100}%`;
   const r = document.getElementById('round-label');
-  r.textContent = `ROUND ${match.round} • ${match.p1Rounds}-${match.p2Rounds}`;
+  r.textContent = `ROUND ${match.round}`;
   document.getElementById('timer').textContent = match.timer.toString().padStart(2, '0');
+  paintRoundDots('round-dots-p1', match.p1Rounds, match.round);
+  paintRoundDots('round-dots-p2', match.p2Rounds, match.round);
+}
+
+function paintRoundDots(id, wonCount, currentRound) {
+  const host = document.getElementById(id);
+  if (!host) return;
+  const dots = host.children;
+  for (let i = 0; i < dots.length; i++) {
+    dots[i].classList.remove('won', 'current');
+    if (i < wonCount) dots[i].classList.add('won');
+    else if (i === currentRound - 1) dots[i].classList.add('current');
+  }
+}
+
+function drawHudPortrait(id, fighter) {
+  const host = document.getElementById(id);
+  if (!host) return;
+  host.innerHTML = '';
+  const c = document.createElement('canvas');
+  c.width = 44; c.height = 44;
+  host.appendChild(c);
+  const ctx = c.getContext('2d');
+  const p = fighter.palette || fighter;
+  const skin = p.skin || '#d4a574';
+  const hair = p.hair || '#2a1a10';
+  const trunks = p.trunks || '#cc2233';
+  // background
+  const bg = ctx.createLinearGradient(0, 0, 0, 44);
+  bg.addColorStop(0, '#223048'); bg.addColorStop(1, '#050810');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, 44, 44);
+  // shoulders
+  ctx.fillStyle = skin;
+  ctx.fillRect(4, 30, 36, 14);
+  // neck
+  ctx.fillRect(19, 26, 6, 6);
+  // head
+  ctx.beginPath(); ctx.arc(22, 20, 10, 0, Math.PI * 2); ctx.fill();
+  // hair cap
+  ctx.fillStyle = hair;
+  ctx.beginPath(); ctx.ellipse(22, 16, 11, 7, 0, Math.PI, 0); ctx.fill();
+  // eyes
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(18, 20, 2, 2); ctx.fillRect(24, 20, 2, 2);
+  // mouthguard
+  ctx.fillStyle = p.accent || '#ffd34a';
+  ctx.fillRect(19, 24, 6, 1);
+  // shoulder trim
+  ctx.fillStyle = trunks;
+  ctx.fillRect(4, 40, 36, 4);
 }
 
 function endMatchToResult(winner) {

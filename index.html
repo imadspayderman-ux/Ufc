@@ -70,24 +70,58 @@
   <section id="fight" class="screen">
     <div id="hud">
       <div class="hud-side left">
-        <div class="hud-name" id="hud-name-p1">—</div>
-        <div class="bar health"><div class="fill" id="hp-p1"></div></div>
-        <div class="bar stamina"><div class="fill" id="st-p1"></div></div>
-        <div class="bar special"><div class="fill" id="sp-p1"></div></div>
+        <div class="hud-nameplate">
+          <div class="hud-portrait" id="portrait-p1"></div>
+          <div class="hud-meta">
+            <div class="hud-name" id="hud-name-p1">—</div>
+            <div class="hud-nick" id="hud-nick-p1">—</div>
+            <div class="hud-style" id="hud-style-p1">—</div>
+          </div>
+        </div>
+        <div class="bar health"><div class="fill" id="hp-p1"></div><span class="bar-label">HP</span></div>
+        <div class="bar stamina"><div class="fill" id="st-p1"></div><span class="bar-label">STAMINA</span></div>
+        <div class="bar special"><div class="fill" id="sp-p1"></div><span class="bar-label">SPECIAL</span></div>
       </div>
       <div class="hud-center">
         <div class="round" id="round-label">ROUND 1</div>
+        <div class="round-dots" id="round-dots-p1"><span></span><span></span><span></span></div>
         <div class="timer" id="timer">60</div>
+        <div class="round-dots" id="round-dots-p2"><span></span><span></span><span></span></div>
       </div>
       <div class="hud-side right">
-        <div class="hud-name" id="hud-name-p2">—</div>
-        <div class="bar health right"><div class="fill" id="hp-p2"></div></div>
-        <div class="bar stamina right"><div class="fill" id="st-p2"></div></div>
-        <div class="bar special right"><div class="fill" id="sp-p2"></div></div>
+        <div class="hud-nameplate right">
+          <div class="hud-meta">
+            <div class="hud-name" id="hud-name-p2">—</div>
+            <div class="hud-nick" id="hud-nick-p2">—</div>
+            <div class="hud-style" id="hud-style-p2">—</div>
+          </div>
+          <div class="hud-portrait" id="portrait-p2"></div>
+        </div>
+        <div class="bar health right"><div class="fill" id="hp-p2"></div><span class="bar-label">HP</span></div>
+        <div class="bar stamina right"><div class="fill" id="st-p2"></div><span class="bar-label">STAMINA</span></div>
+        <div class="bar special right"><div class="fill" id="sp-p2"></div><span class="bar-label">SPECIAL</span></div>
       </div>
     </div>
     <canvas id="arena" width="1280" height="640"></canvas>
     <div id="announcer"></div>
+    <div id="control-hints">
+      <div class="chint-group">
+        <span><kbd>A</kbd><kbd>D</kbd> MOVE</span>
+        <span><kbd>W</kbd> JUMP</span>
+        <span><kbd>S</kbd> CROUCH</span>
+      </div>
+      <div class="chint-group">
+        <span><kbd>J</kbd> JAB</span>
+        <span><kbd>K</kbd> CROSS</span>
+        <span><kbd>U</kbd> UPPERCUT</span>
+        <span><kbd>L</kbd> KICK</span>
+      </div>
+      <div class="chint-group">
+        <span><kbd>I</kbd> BLOCK</span>
+        <span><kbd>⇧</kbd> DODGE</span>
+        <span><kbd>␣</kbd> SPECIAL</span>
+      </div>
+    </div>
     <div id="pause-overlay" class="overlay hidden">
       <div class="overlay-box">
         <h2>PAUSED</h2>

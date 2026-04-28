@@ -63,32 +63,56 @@ h2 {
 h3 { font-size: 22px; letter-spacing: 2px; }
 
 .btn {
-  background: linear-gradient(180deg, #2a3344 0%, #131820 100%);
+  position: relative;
+  background: linear-gradient(180deg, #2d3a52 0%, #0f1620 100%);
   color: var(--text);
-  border: 2px solid #3a4458;
-  padding: 14px 36px;
+  border: 2px solid #4a5978;
+  padding: 16px 40px;
   font-size: 22px;
-  letter-spacing: 4px;
+  letter-spacing: 6px;
   font-family: inherit;
   cursor: pointer;
   text-transform: uppercase;
-  transition: transform 0.08s, border-color 0.15s, background 0.15s;
-  min-width: 220px;
+  transition: transform 0.08s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  min-width: 240px;
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%, 14px 50%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), 0 2px 0 #000, 0 6px 14px rgba(0,0,0,0.6);
+  text-shadow: 1px 1px 0 #000, 0 0 4px rgba(0,0,0,0.8);
+}
+.btn::before {
+  content: ''; position: absolute; inset: 2px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), transparent 40%);
+  clip-path: inherit;
+  pointer-events: none;
 }
 .btn:hover:not(:disabled) {
   border-color: var(--gold);
-  background: linear-gradient(180deg, #3a4458 0%, #1a212d 100%);
+  background: linear-gradient(180deg, #4a5978 0%, #1a222e 100%);
   transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 2px 0 #000, 0 10px 22px rgba(255,204,51,0.2);
 }
 .btn:active:not(:disabled) { transform: translateY(1px); }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; filter: grayscale(0.6); }
 .btn.primary {
-  background: linear-gradient(180deg, var(--red) 0%, #aa1122 100%);
-  border-color: #ff6677;
+  background: linear-gradient(180deg, #ff4458 0%, #8a0f22 100%);
+  border-color: #ff7788;
   color: #fff;
-  text-shadow: 1px 1px 0 #000;
 }
-.btn.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ff5566 0%, #cc1133 100%); }
+.btn.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ff6677 0%, #b01128 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 0 #000, 0 10px 22px rgba(255,80,90,0.4);
+}
+.btn.primary::after {
+  content: ''; position: absolute;
+  top: 0; left: -40%; width: 40%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  transform: skewX(-20deg);
+  animation: btn-shine 2.4s infinite;
+  pointer-events: none;
+}
+@keyframes btn-shine {
+  0% { left: -50%; } 60% { left: 110%; } 100% { left: 110%; }
+}
 
 .menu-buttons { display: flex; flex-direction: column; gap: 14px; }
 .footer { position: absolute; bottom: 16px; font-size: 12px; color: var(--muted); letter-spacing: 2px; }
@@ -157,31 +181,131 @@ h3 { font-size: 22px; letter-spacing: 2px; }
 #hud {
   width: 100%;
   display: grid;
-  grid-template-columns: 1fr 220px 1fr;
-  gap: 12px;
-  padding: 12px 18px;
-  background: linear-gradient(180deg, rgba(0,0,0,0.85), rgba(0,0,0,0.4));
-  border-bottom: 2px solid #2a3344;
+  grid-template-columns: 1fr 260px 1fr;
+  gap: 16px;
+  padding: 10px 22px 12px;
+  background: linear-gradient(180deg, rgba(0,0,0,0.95), rgba(10,15,25,0.6));
+  border-bottom: 2px solid var(--gold);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.7);
 }
 .hud-side { display: flex; flex-direction: column; gap: 6px; }
-.hud-side.right { align-items: flex-end; }
-.hud-name { font-size: 22px; letter-spacing: 3px; }
-.bar { width: 100%; height: 18px; background: #11151c; border: 2px solid #1a2030; position: relative; overflow: hidden; }
+.hud-side.right { align-items: stretch; }
+.hud-nameplate {
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(90deg, rgba(51,170,255,0.15), transparent 70%);
+  border-left: 4px solid var(--blue);
+  padding: 6px 10px;
+  margin-bottom: 2px;
+}
+.hud-nameplate.right {
+  background: linear-gradient(270deg, rgba(255,51,68,0.15), transparent 70%);
+  border-left: none; border-right: 4px solid var(--red);
+  flex-direction: row;
+  text-align: right;
+}
+.hud-portrait {
+  width: 44px; height: 44px;
+  background: radial-gradient(circle at 30% 20%, #2a3344, #0a0e16);
+  border: 2px solid var(--gold);
+  flex-shrink: 0;
+  position: relative; overflow: hidden;
+}
+.hud-portrait canvas { width: 100%; height: 100%; display: block; }
+.hud-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.hud-name { font-size: 20px; letter-spacing: 2px; line-height: 1; text-shadow: 2px 2px 0 #000; }
+.hud-nick { font-size: 12px; color: var(--gold); letter-spacing: 2px; font-family: 'Courier New', monospace; }
+.hud-style { font-size: 10px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+
+.bar {
+  width: 100%; height: 18px;
+  background: #05080d;
+  border: 1px solid #252c3a;
+  position: relative; overflow: hidden;
+  box-shadow: inset 0 2px 6px rgba(0,0,0,0.8);
+}
+.bar .bar-label {
+  position: absolute;
+  top: 50%; left: 6px; transform: translateY(-50%);
+  font-size: 9px; letter-spacing: 2px; color: rgba(255,255,255,0.85);
+  text-shadow: 1px 1px 0 #000;
+  z-index: 2; font-family: 'Courier New', monospace;
+  pointer-events: none;
+}
+.bar.right .bar-label { left: auto; right: 6px; }
 .bar.right .fill { float: right; }
 .bar .fill {
   height: 100%;
   transition: width 0.2s, background 0.2s;
-  background: linear-gradient(90deg, var(--green), #44cc66);
+  background: linear-gradient(180deg, #55ee88, #22aa44);
+  box-shadow: inset 0 -3px 0 rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.3);
 }
-.bar.health .fill { background: linear-gradient(90deg, #ff5566, #cc1122); }
+.bar.health { height: 22px; border-color: #4a1a22; }
+.bar.health .fill {
+  background: linear-gradient(180deg, #ff6677 0%, #ff3344 40%, #aa1122 100%);
+  box-shadow: inset 0 -3px 0 rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.35), 0 0 8px rgba(255,80,100,0.4);
+}
 .bar.stamina { height: 8px; }
-.bar.stamina .fill { background: linear-gradient(90deg, #ffcc33, #ff8800); }
+.bar.stamina .fill { background: linear-gradient(180deg, #ffdd55, #ff7700); }
 .bar.special { height: 8px; }
-.bar.special .fill { background: linear-gradient(90deg, #66ddff, #3388ff); }
+.bar.special .fill { background: linear-gradient(180deg, #88eeff, #2266dd); box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 0 8px rgba(120,200,255,0.5); }
+.bar.stamina .bar-label,
+.bar.special .bar-label { font-size: 8px; }
 
-.hud-center { text-align: center; }
-.round { font-size: 16px; letter-spacing: 4px; color: var(--muted); }
-.timer { font-size: 56px; color: var(--gold); text-shadow: 2px 2px 0 #000; letter-spacing: 2px; }
+.hud-center {
+  text-align: center;
+  padding: 4px 8px;
+  background: linear-gradient(180deg, rgba(255,204,51,0.1), rgba(0,0,0,0.4));
+  border-left: 1px solid rgba(255,204,51,0.3);
+  border-right: 1px solid rgba(255,204,51,0.3);
+}
+.round { font-size: 14px; letter-spacing: 4px; color: var(--gold); text-shadow: 1px 1px 0 #000; }
+.timer {
+  font-size: 64px; color: var(--gold);
+  text-shadow: 3px 3px 0 #000, 0 0 18px rgba(255,204,51,0.6);
+  letter-spacing: 2px; font-family: 'Impact', 'Arial Black', sans-serif;
+  line-height: 1;
+}
+.round-dots {
+  display: flex; justify-content: center; gap: 6px;
+  margin: 2px 0;
+}
+.round-dots span {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 1px solid var(--gold); background: transparent;
+  transition: background 0.2s;
+}
+.round-dots span.won { background: var(--gold); box-shadow: 0 0 6px var(--gold); }
+.round-dots span.current { background: rgba(255,204,51,0.3); }
+
+/* Control hints strip at bottom of fight screen */
+#control-hints {
+  position: absolute;
+  bottom: 8px; left: 0; right: 0;
+  display: flex; justify-content: center; gap: 28px;
+  padding: 6px 12px;
+  pointer-events: none;
+  font-size: 11px;
+  opacity: 0.72;
+}
+.chint-group {
+  display: flex; gap: 10px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,204,51,0.2);
+  padding: 4px 10px;
+  letter-spacing: 2px;
+  color: #ddd;
+}
+.chint-group span { display: flex; align-items: center; gap: 4px; }
+.chint-group kbd {
+  background: #1a222e;
+  border: 1px solid #3a4458;
+  padding: 1px 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: var(--gold);
+  border-radius: 2px;
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,0.1), 0 1px 0 #000;
+}
 
 #arena {
   display: block;
