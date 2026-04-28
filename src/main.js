@@ -210,7 +210,69 @@ function togglePause(forceState) {
 
 function applyP1Input(match) {
   const p = match.p1;
+  const opp = match.p2;
   if (p.state === 'down' || p.state === 'ko' || p.state === 'hit') return;
+
+  // Pause (always)
+  if (Input.consumePressed('pause')) togglePause();
+
+  // Context: grappling states — different keymap
+  if (p.state === 'sub_defense') {
+    // Mash any key to escape (E or jab/cross/up/down for accessibility)
+    if (Input.consumePressed('tap_escape') || Input.consumePressed('jab') ||
+        Input.consumePressed('cross') || Input.consumePressed('up') ||
+        Input.consumePressed('down') || Input.consumePressed('left') ||
+        Input.consumePressed('right')) {
+      match.submissionTap(p);
+    }
+    return;
+  }
+  if (p.state === 'sub_offense') {
+    // nothing the attacker can input — sub resolves on its own
+    return;
+  }
+  if (p.state === 'clinch') {
+    if (Input.consumePressed('break')) { match.tryBreakClinch(p); return; }
+    if (Input.consumePressed('grapple')) { match.tryTakedown(p, opp); return; }
+    if (Input.consumePressed('submit')) {
+      // Front headlock submissions available from clinch
+      if (match.attemptSubmission(p, 'guillotine')) return;
+    }
+    if (Input.consumePressed('jab')) tryAttack(p, 'dirty_punch');
+    if (Input.consumePressed('cross')) tryAttack(p, 'dirty_punch');
+    if (Input.consumePressed('uppercut')) tryAttack(p, 'clinch_elbow');
+    if (Input.consumePressed('kick')) tryAttack(p, 'clinch_knee');
+    if (Input.consumePressed('head_kick')) tryAttack(p, 'clinch_elbow');
+    return;
+  }
+  if (p.state === 'ground_top') {
+    if (Input.consumePressed('break')) { match.tryStandUp(p); return; }
+    if (Input.consumePressed('advance')) { match.tryPositionAdvance(p); return; }
+    if (Input.consumePressed('submit')) {
+      const g = match.grapple;
+      if (g) {
+        if (g.position === 'back_mount') { if (match.attemptSubmission(p, 'rear_naked_choke')) return; }
+        else if (g.position === 'mount') { if (match.attemptSubmission(p, 'armbar')) return; }
+        else if (g.position === 'side_control') { if (match.attemptSubmission(p, 'kimura')) return; }
+      }
+    }
+    if (Input.consumePressed('jab')) tryAttack(p, 'ground_punch');
+    if (Input.consumePressed('cross')) tryAttack(p, 'ground_punch');
+    if (Input.consumePressed('uppercut')) tryAttack(p, 'ground_elbow');
+    if (Input.consumePressed('kick')) tryAttack(p, 'ground_elbow');
+    return;
+  }
+  if (p.state === 'ground_bottom') {
+    if (Input.consumePressed('break') || Input.consumePressed('up')) { match.tryStandUp(p); return; }
+    if (Input.consumePressed('submit')) {
+      // Bottom can attack submissions from guard
+      if (match.attemptSubmission(p, 'triangle')) return;
+      if (match.attemptSubmission(p, 'armbar')) return;
+    }
+    return;
+  }
+  if (p.state === 'sprawl') return;
+
   const speed = 3.2 * p.speedMul();
 
   // Block (hold I)
@@ -239,6 +301,16 @@ function applyP1Input(match) {
   if (Input.consumePressed('up')) p.startJump();
   // Dodge
   if (Input.consumePressed('dodge')) p.startDodge();
+  // Grappling (standing)
+  if (Input.consumePressed('grapple')) {
+    // G = clinch if close, or takedown shot if within 150
+    const dist = Math.abs(p.x - opp.x);
+    if (dist <= 110) {
+      if (!match.tryClinch(p, opp)) { /* fell through */ }
+    } else if (dist <= 150) {
+      match.tryTakedown(p, opp);
+    }
+  }
   // Attacks
   if (Input.consumePressed('jab')) tryAttack(p, 'jab');
   if (Input.consumePressed('cross')) tryAttack(p, 'cross');
@@ -247,8 +319,6 @@ function applyP1Input(match) {
   if (Input.consumePressed('low_kick')) tryAttack(p, 'low_kick');
   if (Input.consumePressed('head_kick')) tryAttack(p, 'head_kick');
   if (Input.consumePressed('special')) tryAttack(p, 'special');
-  // Pause
-  if (Input.consumePressed('pause')) togglePause();
 }
 
 function tryAttack(p, kind) {

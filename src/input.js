@@ -18,6 +18,12 @@ const KEY_MAP = {
   KeyI: 'block',
   ShiftLeft: 'dodge', ShiftRight: 'dodge',
   Space: 'special',
+  // Grappling
+  KeyG: 'grapple',     // initiate clinch / shoot takedown
+  KeyT: 'break',       // break clinch / stand up from ground
+  KeyF: 'submit',      // attempt submission (context-sensitive)
+  KeyE: 'tap_escape',  // (defender) tap to escape submission
+  KeyR: 'advance',     // (top) advance ground position
   // System
   KeyP: 'pause', Escape: 'pause',
   Enter: 'enter',
