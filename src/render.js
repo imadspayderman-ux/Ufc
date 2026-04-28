@@ -302,16 +302,16 @@ export class Renderer {
 
     ctx.restore();
 
+    // back arm (drawn FIRST so it sits behind torso for proper depth)
+    drawArm(ctx, pose.armBack, p, bd, true);
+
     // torso
     drawTorso(ctx, pose, p, bd, ht, f.data);
 
-    // back arm (further from camera) — facing right means we view P1's left side; back arm = P1's left arm
-    drawArm(ctx, pose.armBack, p, bd, true);
-
-    // head
+    // head (sits on top of torso neck)
     drawHead(ctx, pose, p, ht, f);
 
-    // front arm
+    // front arm (closest to camera — drawn last so it overlaps torso)
     drawArm(ctx, pose.armFront, p, bd, false);
 
     // attack effect: motion lines
@@ -432,16 +432,27 @@ function computePose(f, t) {
   const af = f.attackFrame;
   const bd = (f.data && f.data.build) || 1.0;
   const ht = (f.data && f.data.height) || 1.0;
-  const shoulderBaseY = -68 * ht - 82;   // matches torso.neckOffsetY when added to pelvis
-  // Defaults (boxing stance, facing right) - back arm is the rear hand
+  // Torso silhouette goes from pelvis y=0 to neck y=-72*ht, shoulder edge at ±30*bd (male) / ±26*bd (female).
+  // Place joint shoulders just inside that edge so the deltoid cap hugs the torso.
+  const shoulderEdgeX = 26 * bd;
+  const shoulderWorldY = -68 * ht - 82;  // pelvis.y + shoulderY in torso local coords
+  // Defaults: proper boxing guard — elbows bent out, gloves up in front of jaw.
   const pose = {
     pelvis: { x: 0, y: -82 },
     torsoAngle: 0,
     headOffset: { x: -2, y: -152 * ht },
-    legL: { hipX: -12 * bd, hipY: -78, kneeX: -14 * bd, kneeY: -42, footX: -20 * bd, footY: 0 }, // back leg
-    legR: { hipX: 12 * bd,  hipY: -78, kneeX: 20 * bd,  kneeY: -42, footX: 26 * bd,  footY: 0 }, // lead leg
-    armBack: { shoulderX: -24 * bd, shoulderY: shoulderBaseY + 4, elbowX: -14 * bd, elbowY: -125, handX: 0, handY: -128 },
-    armFront:{ shoulderX: 24 * bd,  shoulderY: shoulderBaseY + 4, elbowX: 20 * bd, elbowY: -128, handX: 28, handY: -128 },
+    legL: { hipX: -12 * bd, hipY: -78, kneeX: -16 * bd, kneeY: -42, footX: -22 * bd, footY: 0 }, // back leg
+    legR: { hipX: 12 * bd,  hipY: -78, kneeX: 20 * bd,  kneeY: -42, footX: 28 * bd,  footY: 0 }, // lead leg (wider stance)
+    armBack: {
+      shoulderX: -shoulderEdgeX, shoulderY: shoulderWorldY,
+      elbowX: -18 * bd, elbowY: -118,
+      handX: -2, handY: -138,
+    },
+    armFront: {
+      shoulderX: shoulderEdgeX, shoulderY: shoulderWorldY,
+      elbowX: 30 * bd, elbowY: -118,
+      handX: 20 * bd, handY: -140,
+    },
   };
 
   // Idle breathing — subtle sine sway on chest and head.
@@ -1584,8 +1595,8 @@ function drawFighterStandalone(ctx, fs, fighter) {
   ctx.fillStyle = p.accent;
   ctx.fillRect(-6, -10, 12, 6);
   ctx.restore();
-  drawTorso(ctx, pose, p, bd, ht, fighter);
   drawArm(ctx, pose.armBack, p, bd, true);
+  drawTorso(ctx, pose, p, bd, ht, fighter);
   drawHead(ctx, pose, p, ht, fs);
   drawArm(ctx, pose.armFront, p, bd, false);
   ctx.restore();

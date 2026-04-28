@@ -42,7 +42,7 @@ export class FighterState {
     this.data = data;
     this.side = side; // 'p1' | 'p2'
     this.facing = side === 'p1' ? 1 : -1;
-    this.x = side === 'p1' ? 380 : 900;
+    this.x = side === 'p1' ? 340 : 940;
     this.y = ARENA.groundY;
     this.vx = 0;
     this.vy = 0;
