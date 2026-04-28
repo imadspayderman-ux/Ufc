@@ -312,8 +312,22 @@ function handleEvent(ev) {
     }
   } else if (ev.type === 'announce') {
     showAnnounce(ev.text, true);
+  } else if (ev.type === 'intro_announce') {
+    // In-canvas banner during the pre-fight ceremony (in addition to the HTML announcer).
+    if (state.match) {
+      state.match.introBanner = {
+        text: ev.text,
+        since: state.match.tick,
+        hold: 60,
+        size: ev.text.length > 24 ? 44 : 60,
+      };
+    }
+    showAnnounce(ev.text, true);
   } else if (ev.type === 'fight_start') {
     showAnnounce('FIGHT!', true);
+    if (state.match) {
+      state.match.introBanner = { text: 'FIGHT!', since: state.match.tick, hold: 30, size: 96 };
+    }
   } else if (ev.type === 'round_end') {
     if (ev.winner === 'p1') showAnnounce('K.O.!', true);
     else if (ev.winner === 'p2') showAnnounce('K.O.!', true);

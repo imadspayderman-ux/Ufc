@@ -9,6 +9,24 @@ export const ARENA = {
   gravity: 0.85,
 };
 
+// Duration (frames @60fps) for each intro-ceremony phase. Round 1 uses the full
+// sequence; rounds 2+ jump straight to the short countdown.
+export const INTRO_PHASE_DURATIONS = {
+  pan: 90,           // sweeping spotlight + "LADIES AND GENTLEMEN"
+  blue_corner: 100,  // introduce P1 at blue corner
+  red_corner: 100,   // introduce P2 at red corner
+  ref_walk_in: 60,   // referee walks to center
+  ref_call: 90,      // referee raises arm, "LET'S GET IT ON!"
+  ref_walk_out: 40,  // referee exits frame
+  countdown: 60,     // 3-2-1
+  fight: 30,         // "FIGHT!" before handoff to live combat
+};
+
+const INTRO_PHASE_ORDER_R1 = [
+  'pan', 'blue_corner', 'red_corner', 'ref_walk_in', 'ref_call', 'ref_walk_out', 'countdown', 'fight',
+];
+const INTRO_PHASE_ORDER_RN = ['countdown', 'fight'];
+
 export const ATTACK_DATA = {
   jab:       { startup: 4,  active: 3, recovery: 8,  damage: 5,  reach: 95,  height: 'high', stam: 5,  pushback: 4,  meter: 5,  height_y: 35 },
   cross:     { startup: 7,  active: 4, recovery: 14, damage: 11, reach: 110, height: 'high', stam: 9,  pushback: 7,  meter: 8,  height_y: 35 },
@@ -242,6 +260,14 @@ export class Match {
     this.lastWinner = null;
     this.totalRounds = this.maxRounds;
     this.tick = 0;
+
+    // Intro sequence phases (full ceremony only on round 1).
+    // First step() advances from '' -> 'pan' and fires the initial announce/SFX.
+    this.introPhase = '';
+    this.introPhaseTime = 0;
+    this.introPhaseDuration = 0;
+    // Referee state (used during intro only).
+    this.ref = { x: ARENA.width + 80, y: ARENA.groundY, facing: -1, state: 'walking', armRaised: 0, animTime: 0 };
   }
 
   pushEvent(type, payload = {}) {
@@ -263,8 +289,99 @@ export class Match {
     this.p2.x = 900; this.p2.y = ARENA.groundY; this.p2.vx = 0; this.p2.vy = 0;
     this.p2.state = 'idle'; this.p2.facing = -1; this.p2.attack = null; this.p2.attackFrame = 0; this.p2.stunFrames = 0;
     this.timer = 60;
-    this.subTimer = 90;
     this.state = 'intro';
+    // Rounds 2+: short countdown-only intro.
+    this.introPhase = 'countdown';
+    this.introPhaseTime = 0;
+    this.introPhaseDuration = INTRO_PHASE_DURATIONS.countdown;
+    this.ref.x = ARENA.width + 80;
+    this.ref.state = 'idle';
+    this.ref.armRaised = 0;
+  }
+
+  _updateReferee() {
+    const r = this.ref;
+    r.animTime++;
+    const centerX = ARENA.width / 2;
+    if (this.introPhase === 'ref_walk_in') {
+      // Walk from right side to center.
+      const k = Math.min(1, this.introPhaseTime / this.introPhaseDuration);
+      r.x = ARENA.width + 60 + (centerX - (ARENA.width + 60)) * easeOutCubic(k);
+      r.facing = -1;
+      r.state = 'walking';
+      r.armRaised = 0;
+    } else if (this.introPhase === 'ref_call') {
+      r.x = centerX;
+      r.state = 'calling';
+      // Raise arm during first half, hold second half.
+      const k = Math.min(1, this.introPhaseTime / (this.introPhaseDuration * 0.5));
+      r.armRaised = easeOutCubic(k);
+    } else if (this.introPhase === 'ref_walk_out') {
+      const k = Math.min(1, this.introPhaseTime / this.introPhaseDuration);
+      r.x = centerX + (ARENA.width + 80 - centerX) * easeInCubic(k);
+      r.facing = 1;
+      r.state = 'walking';
+      r.armRaised = Math.max(0, 1 - k * 2);
+    } else {
+      // Off-screen otherwise.
+      if (this.introPhase === 'countdown' || this.introPhase === 'fight') {
+        r.x = ARENA.width + 200;
+      }
+    }
+  }
+
+  _advanceIntroPhase() {
+    const order = this.round === 1 ? INTRO_PHASE_ORDER_R1 : INTRO_PHASE_ORDER_RN;
+    let nextIdx;
+    if (!this.introPhase || this.introPhase === '') {
+      nextIdx = 0;
+    } else {
+      const idx = order.indexOf(this.introPhase);
+      nextIdx = idx + 1;
+    }
+    if (nextIdx >= order.length) {
+      // Final phase complete -> start real fight.
+      this.state = 'fight';
+      this.introPhase = 'done';
+      this.introPhaseTime = 0;
+      this.pushEvent('fight_start');
+      SFX.fight();
+      return;
+    }
+    const next = order[nextIdx];
+    this.introPhase = next;
+    this.introPhaseTime = 0;
+    this.introPhaseDuration = INTRO_PHASE_DURATIONS[next] || 60;
+    // Per-phase events and SFX hooks.
+    if (next === 'pan') {
+      this.pushEvent('intro_announce', { text: 'LADIES AND GENTLEMEN!' });
+      SFX.bell();
+    } else if (next === 'blue_corner') {
+      const f = this.p1.data;
+      this.pushEvent('intro_announce', { text: `BLUE CORNER — ${f.name} "${f.nickname.toUpperCase()}"` });
+      SFX.countdown();
+    } else if (next === 'red_corner') {
+      const f = this.p2.data;
+      this.pushEvent('intro_announce', { text: `RED CORNER — ${f.name} "${f.nickname.toUpperCase()}"` });
+      SFX.countdown();
+    } else if (next === 'ref_walk_in') {
+      this.ref.x = ARENA.width + 60;
+      this.ref.facing = -1;
+      this.ref.state = 'walking';
+      this.ref.armRaised = 0;
+    } else if (next === 'ref_call') {
+      this.pushEvent('intro_announce', { text: "LET'S GET IT ON!" });
+      this.ref.state = 'calling';
+      SFX.bell();
+    } else if (next === 'ref_walk_out') {
+      this.ref.state = 'walking_out';
+      this.ref.facing = 1;
+    } else if (next === 'countdown') {
+      this.pushEvent('intro_announce', { text: `ROUND ${this.round}` });
+      SFX.bell();
+    } else if (next === 'fight') {
+      // the "FIGHT!" banner will be emitted when the next phase starts (handled in step when done)
+    }
   }
 
   step(dt) {
@@ -272,15 +389,23 @@ export class Match {
     if (this.hitstop > 0) { this.hitstop--; return; }
 
     if (this.state === 'intro') {
-      this.subTimer--;
-      if (this.subTimer <= 0) {
-        this.state = 'fight';
+      if (!this.introPhase) {
+        this._advanceIntroPhase();
+      }
+      // Update referee position each frame.
+      this._updateReferee();
+      this.introPhaseTime++;
+      if (this.introPhaseTime >= this.introPhaseDuration) {
+        this._advanceIntroPhase();
+      }
+      // Expose subTimer as countdown (3-2-1) when in countdown phase,
+      // for compatibility with existing HUD renderer.
+      if (this.introPhase === 'countdown') {
+        this.subTimer = this.introPhaseDuration - this.introPhaseTime;
+      } else if (this.introPhase === 'fight') {
         this.subTimer = 0;
-        this.pushEvent('fight_start');
-        SFX.fight();
-      } else if (this.subTimer === 60) {
-        this.pushEvent('announce', { text: 'ROUND ' + this.round });
-        SFX.bell();
+      } else {
+        this.subTimer = 999; // hide countdown during ceremony phases
       }
       return;
     }
@@ -455,3 +580,7 @@ export class Match {
 function rectsOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
+
+export function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+export function easeInCubic(t) { return t * t * t; }
+export function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
