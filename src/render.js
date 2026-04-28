@@ -424,7 +424,8 @@ export class Renderer {
       }
     }
     // Referee on top of fighters (he's the focal point during intro).
-    if (match.state === 'intro' && match.ref && match.ref.x < ARENA.width + 100) {
+    // Hidden whenever fighters are grappling so he doesn't overlap the clinch/mount poses.
+    if (match.state === 'intro' && !match.grapple && match.ref && match.ref.x < ARENA.width + 100) {
       drawReferee(ctx, match.ref);
     }
     this.drawEffects(ctx);
