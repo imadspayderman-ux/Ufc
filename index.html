@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arcade MMA — Octagon Fury</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Main Menu -->
+  <section id="menu" class="screen active">
+    <div class="logo">
+      <div class="logo-top">OCTAGON</div>
+      <div class="logo-bottom">FURY</div>
+      <div class="logo-sub">ARCADE MMA</div>
+    </div>
+    <div class="menu-buttons">
+      <button data-action="play" class="btn primary">FIGHT</button>
+      <button data-action="howto" class="btn">HOW TO PLAY</button>
+      <button data-action="credits" class="btn">CREDITS</button>
+    </div>
+    <div class="footer">© Octagon Fury — original arcade fighters, no real persons depicted.</div>
+  </section>
+
+  <!-- Difficulty -->
+  <section id="difficulty" class="screen">
+    <h2>SELECT DIFFICULTY</h2>
+    <div class="diff-grid">
+      <button class="btn diff-btn" data-diff="0">ROOKIE</button>
+      <button class="btn diff-btn" data-diff="1">PRO</button>
+      <button class="btn diff-btn" data-diff="2">CHAMPION</button>
+      <button class="btn diff-btn" data-diff="3">LEGEND</button>
+    </div>
+    <button class="btn back-btn" data-action="back-menu">BACK</button>
+  </section>
+
+  <!-- Fighter Select -->
+  <section id="select" class="screen">
+    <h2>CHOOSE YOUR FIGHTER</h2>
+    <div id="roster" class="roster"></div>
+    <div class="select-info">
+      <div class="card-preview" id="preview-p1">
+        <canvas width="220" height="240"></canvas>
+        <div class="info">
+          <h3 class="name">—</h3>
+          <div class="nick">—</div>
+          <div class="style">—</div>
+          <div class="stats"></div>
+        </div>
+      </div>
+      <div class="vs-block">VS</div>
+      <div class="card-preview" id="preview-p2">
+        <canvas width="220" height="240"></canvas>
+        <div class="info">
+          <h3 class="name">—</h3>
+          <div class="nick">—</div>
+          <div class="style">—</div>
+          <div class="stats"></div>
+        </div>
+      </div>
+    </div>
+    <div class="select-actions">
+      <button class="btn back-btn" data-action="back-diff">BACK</button>
+      <button class="btn primary" id="start-fight" disabled>START FIGHT</button>
+    </div>
+  </section>
+
+  <!-- Fight Screen -->
+  <section id="fight" class="screen">
+    <div id="hud">
+      <div class="hud-side left">
+        <div class="hud-name" id="hud-name-p1">—</div>
+        <div class="bar health"><div class="fill" id="hp-p1"></div></div>
+        <div class="bar stamina"><div class="fill" id="st-p1"></div></div>
+        <div class="bar special"><div class="fill" id="sp-p1"></div></div>
+      </div>
+      <div class="hud-center">
+        <div class="round" id="round-label">ROUND 1</div>
+        <div class="timer" id="timer">60</div>
+      </div>
+      <div class="hud-side right">
+        <div class="hud-name" id="hud-name-p2">—</div>
+        <div class="bar health right"><div class="fill" id="hp-p2"></div></div>
+        <div class="bar stamina right"><div class="fill" id="st-p2"></div></div>
+        <div class="bar special right"><div class="fill" id="sp-p2"></div></div>
+      </div>
+    </div>
+    <canvas id="arena" width="1280" height="640"></canvas>
+    <div id="announcer"></div>
+    <div id="pause-overlay" class="overlay hidden">
+      <div class="overlay-box">
+        <h2>PAUSED</h2>
+        <button class="btn" data-action="resume">RESUME</button>
+        <button class="btn" data-action="quit">QUIT TO MENU</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Result -->
+  <section id="result" class="screen">
+    <h2 id="result-title">VICTORY</h2>
+    <div id="result-detail"></div>
+    <div class="select-actions">
+      <button class="btn primary" data-action="rematch">REMATCH</button>
+      <button class="btn" data-action="back-select">CHANGE FIGHTER</button>
+      <button class="btn" data-action="back-menu">MAIN MENU</button>
+    </div>
+  </section>
+
+  <!-- Modal: How to Play -->
+  <section id="howto" class="screen">
+    <h2>HOW TO PLAY</h2>
+    <div class="howto-grid">
+      <div class="howto-col">
+        <h3>MOVEMENT</h3>
+        <ul>
+          <li><kbd>A</kbd> / <kbd>D</kbd> — walk</li>
+          <li><kbd>W</kbd> — jump / step in</li>
+          <li><kbd>S</kbd> — crouch</li>
+          <li><kbd>Shift</kbd> — dash / dodge</li>
+        </ul>
+      </div>
+      <div class="howto-col">
+        <h3>STRIKES</h3>
+        <ul>
+          <li><kbd>J</kbd> — jab (fast, low damage)</li>
+          <li><kbd>K</kbd> — cross / hook (heavy)</li>
+          <li><kbd>L</kbd> — kick (long range)</li>
+          <li><kbd>U</kbd> — uppercut (anti-air)</li>
+        </ul>
+      </div>
+      <div class="howto-col">
+        <h3>DEFENSE & SPECIAL</h3>
+        <ul>
+          <li><kbd>I</kbd> — block (drains stamina)</li>
+          <li><kbd>O</kbd> — clinch / takedown</li>
+          <li><kbd>Space</kbd> — SPECIAL (needs full meter)</li>
+          <li><kbd>P</kbd> / <kbd>Esc</kbd> — pause</li>
+        </ul>
+      </div>
+    </div>
+    <div class="howto-tips">
+      <p><strong>Tip:</strong> Build SPECIAL meter by landing strikes and taking hits. Specials are unblockable and deal massive damage.</p>
+      <p><strong>Tip:</strong> Low kicks drain the opponent's stamina; head kicks do the most damage but are slow.</p>
+      <p><strong>Tip:</strong> A perfectly-timed dodge (Shift just before a hit) gives a counter window.</p>
+    </div>
+    <button class="btn back-btn" data-action="back-menu">BACK</button>
+  </section>
+
+  <!-- Modal: Credits -->
+  <section id="credits" class="screen">
+    <h2>CREDITS</h2>
+    <p>Octagon Fury — Arcade MMA</p>
+    <p>Built as an original arcade fighting game.</p>
+    <p>All fighters, names, and likenesses are entirely fictional and created for this game.<br>
+       This product is not affiliated with or endorsed by any real-world fighting organization, athlete, or league.</p>
+    <p>Sound effects are synthesized in-browser via the Web Audio API.</p>
+    <button class="btn back-btn" data-action="back-menu">BACK</button>
+  </section>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
