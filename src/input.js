@@ -10,11 +10,12 @@ const KEY_MAP = {
   // Strikes
   KeyJ: 'jab',
   KeyK: 'cross',
-  KeyL: 'kick',
   KeyU: 'uppercut',
+  KeyL: 'kick',        // mid / body round kick
+  KeyO: 'low_kick',    // low (leg) kick
+  Semicolon: 'head_kick', // high head kick
   // Defense / special
   KeyI: 'block',
-  KeyO: 'clinch',
   ShiftLeft: 'dodge', ShiftRight: 'dodge',
   Space: 'special',
   // System

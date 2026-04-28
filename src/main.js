@@ -243,13 +243,9 @@ function applyP1Input(match) {
   if (Input.consumePressed('jab')) tryAttack(p, 'jab');
   if (Input.consumePressed('cross')) tryAttack(p, 'cross');
   if (Input.consumePressed('uppercut')) tryAttack(p, 'uppercut');
-  if (Input.consumePressed('kick')) {
-    // smart: if holding down, low_kick; if up, head_kick; else kick
-    if (Input.isHeld('down')) tryAttack(p, 'low_kick');
-    else if (Input.isHeld('up')) tryAttack(p, 'head_kick');
-    else tryAttack(p, 'kick');
-  }
-  if (Input.consumePressed('clinch')) tryAttack(p, 'low_kick'); // O = low kick combo button
+  if (Input.consumePressed('kick')) tryAttack(p, 'kick');
+  if (Input.consumePressed('low_kick')) tryAttack(p, 'low_kick');
+  if (Input.consumePressed('head_kick')) tryAttack(p, 'head_kick');
   if (Input.consumePressed('special')) tryAttack(p, 'special');
   // Pause
   if (Input.consumePressed('pause')) togglePause();
