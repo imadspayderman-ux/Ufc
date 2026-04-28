@@ -47,7 +47,7 @@ export const ATTACK_DATA = {
 
 // Submission catalogue. `escapeBase` = base taps needed to escape (modified by defender stats).
 export const SUBMISSIONS = {
-  guillotine:        { name: 'GUILLOTINE',      escapeBase: 60, dps: 0.30, fromPos: ['front_headlock'] },
+  guillotine:        { name: 'GUILLOTINE',      escapeBase: 60, dps: 0.30, fromPos: ['front_headlock', 'clinch'] },
   rear_naked_choke:  { name: 'REAR-NAKED CHOKE',escapeBase: 75, dps: 0.40, fromPos: ['back_mount'] },
   armbar:            { name: 'ARMBAR',          escapeBase: 65, dps: 0.30, fromPos: ['mount', 'guard'] },
   triangle:          { name: 'TRIANGLE',        escapeBase: 70, dps: 0.32, fromPos: ['guard'] },
@@ -505,12 +505,14 @@ export class Match {
     return true;
   }
 
-  _endClinch(reason) {
+  _endClinch(reason, except = null) {
     const g = this.grapple;
     if (!g) return;
     // Determine separation: who is on which side?
-    if (g.a) { g.a.state = 'idle'; g.a.grappleRole = null; g.a.attack = null; g.a.attackFrame = 0; g.a.cooldown = 10; }
-    if (g.b) { g.b.state = 'idle'; g.b.grappleRole = null; g.b.attack = null; g.b.attackFrame = 0; g.b.cooldown = 10; }
+    if (g.a && g.a !== except) { g.a.state = 'idle'; g.a.grappleRole = null; g.a.attack = null; g.a.attackFrame = 0; g.a.cooldown = 10; }
+    else if (g.a === except) { g.a.grappleRole = null; g.a.attack = null; g.a.attackFrame = 0; }
+    if (g.b && g.b !== except) { g.b.state = 'idle'; g.b.grappleRole = null; g.b.attack = null; g.b.attackFrame = 0; g.b.cooldown = 10; }
+    else if (g.b === except) { g.b.grappleRole = null; g.b.attack = null; g.b.attackFrame = 0; }
     // Push them apart slightly
     if (g.a && g.b) {
       const dir = g.a.x < g.b.x ? -1 : 1;
@@ -549,8 +551,17 @@ export class Match {
       SFX.block();
       return false;
     }
-    // Success — ground position determined by attacker's BJJ/wrestling mix
-    const pos = attacker.specialty.groundAffinity > 0.7 ? 'mount' : 'side_control';
+    // Success — ground position determined by attacker vs. defender ground skill.
+    // If the defender is a strong BJJ/guard player they pull guard on the way down,
+    // giving the bottom fighter real submission threats (triangle / armbar / kimura).
+    let pos;
+    if (defender.specialty.groundAffinity >= 0.75 && defender.specialty.groundAffinity >= attacker.specialty.groundAffinity) {
+      pos = 'guard';
+    } else if (attacker.specialty.groundAffinity > 0.7) {
+      pos = 'mount';
+    } else {
+      pos = 'side_control';
+    }
     if (inClinch) this.grapple = null;
     this._startGround(attacker, defender, pos);
     this.pushEvent('takedown_success', { attacker: attacker.side, position: pos });
@@ -605,15 +616,29 @@ export class Match {
       g.position = 'mount';
       this.pushEvent('position_advance', { position: 'mount' });
       return true;
+    } else if (g.position === 'guard') {
+      // Pass guard → side control. Success depends on top's wrestling vs. bottom's BJJ.
+      if (f.stamina < 10) return false;
+      f.stamina -= 8;
+      const pass = f.wrestlingMul() * 1.1;
+      const hold = g.bottom.submissionMul() * 1.0 + g.bottom.specialty.groundAffinity * 0.3;
+      if (Math.random() * (pass + hold) < pass) {
+        g.position = 'side_control';
+        this.pushEvent('position_advance', { position: 'side_control' });
+        return true;
+      }
+      return false;
     }
     return false;
   }
 
-  _endGround(reason) {
+  _endGround(reason, except = null) {
     const g = this.grapple;
     if (!g) return;
-    if (g.top) { g.top.state = 'idle'; g.top.grappleRole = null; g.top.attack = null; g.top.attackFrame = 0; g.top.cooldown = 14; }
-    if (g.bottom) { g.bottom.state = 'idle'; g.bottom.grappleRole = null; g.bottom.attack = null; g.bottom.attackFrame = 0; g.bottom.cooldown = 14; }
+    if (g.top && g.top !== except) { g.top.state = 'idle'; g.top.grappleRole = null; g.top.attack = null; g.top.attackFrame = 0; g.top.cooldown = 14; }
+    else if (g.top === except) { g.top.grappleRole = null; g.top.attack = null; g.top.attackFrame = 0; }
+    if (g.bottom && g.bottom !== except) { g.bottom.state = 'idle'; g.bottom.grappleRole = null; g.bottom.attack = null; g.bottom.attackFrame = 0; g.bottom.cooldown = 14; }
+    else if (g.bottom === except) { g.bottom.grappleRole = null; g.bottom.attack = null; g.bottom.attackFrame = 0; }
     // Push apart so they reset to striking range
     if (g.top && g.bottom) {
       const topSide = g.top.side === 'p1' ? -1 : 1;
@@ -766,7 +791,7 @@ export class Match {
       if (defender.hp <= 0) {
         defender.state = 'down'; defender.downTime = 90; defender.vy = -6; defender.vx = 6 * (attacker.x < defender.x ? 1 : -1);
         SFX.ko();
-        if (this.grapple) this._endClinch('ko');
+        if (this.grapple) this._endClinch('ko', defender);
         return;
       }
     }
@@ -797,7 +822,7 @@ export class Match {
       if (defender.hp <= 0) {
         defender.state = 'down'; defender.downTime = 90;
         SFX.ko();
-        this._endGround('ko');
+        this._endGround('ko', defender);
         return;
       }
     }

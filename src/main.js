@@ -246,7 +246,8 @@ function applyP1Input(match) {
     return;
   }
   if (p.state === 'ground_top') {
-    if (Input.consumePressed('break')) { match.tryStandUp(p); return; }
+    // Top voluntarily disengages — tryStandUp is bottom-only, so end the ground engagement directly.
+    if (Input.consumePressed('break')) { match._endGround('standup'); return; }
     if (Input.consumePressed('advance')) { match.tryPositionAdvance(p); return; }
     if (Input.consumePressed('submit')) {
       const g = match.grapple;

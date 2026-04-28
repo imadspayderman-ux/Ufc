@@ -199,12 +199,15 @@ export class AI {
       return { cmd, action };
     }
     if (self.state === 'ground_top') {
-      if (this.intent === 'sub' && this.intentDur === 8) {
+      // intentDur was just decremented in step(); decide() sets it to 8 so we match 7 on the action frame.
+      if (this.intent === 'sub' && this.intentDur === 7) {
         const g = match.grapple;
         if (g) {
           if (g.position === 'back_mount') match.attemptSubmission(self, 'rear_naked_choke');
           else if (g.position === 'mount') match.attemptSubmission(self, 'armbar');
           else if (g.position === 'side_control') match.attemptSubmission(self, 'kimura');
+          // From guard, top can only pass or strike — advance position instead.
+          else if (g.position === 'guard') match.tryPositionAdvance(self);
         }
         return { cmd, action };
       }
@@ -214,11 +217,11 @@ export class AI {
       return { cmd, action };
     }
     if (self.state === 'ground_bottom') {
-      if (this.intent === 'sub_from_guard' && this.intentDur === 10) {
+      if (this.intent === 'sub_from_guard' && this.intentDur === 9) {
         if (!match.attemptSubmission(self, 'triangle')) match.attemptSubmission(self, 'armbar');
         return { cmd, action };
       }
-      if (this.intent === 'stand_up' && this.intentDur === 10) {
+      if (this.intent === 'stand_up' && this.intentDur === 9) {
         match.tryStandUp(self);
         return { cmd, action };
       }
