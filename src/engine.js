@@ -163,8 +163,13 @@ export class FighterState {
   }
 
   isActionable() {
-    if (this.wobbleFrames > 0) return false;
-    return ['idle', 'walk', 'crouch', 'jump', 'block', 'dodge'].includes(this.state) && this.cooldown <= 0;
+    // Two-phase wobble: hard lockout for the first ~24f (wobbleHelpless),
+    // then a soft window where the defender can raise a panicked block.
+    // We treat 'wobble' as an actionable starting state during the soft phase.
+    if (this.wobbleFrames > 0 && this.wobbleHelpless > 0) return false;
+    const ok = ['idle', 'walk', 'crouch', 'jump', 'block', 'dodge'].includes(this.state)
+            || (this.state === 'wobble' && this.wobbleHelpless <= 0);
+    return ok && this.cooldown <= 0;
   }
   isOnGround() { return this.y >= ARENA.groundY - 0.1; }
   // weight-class aware modifiers. A crippled lead leg shaves ~40% off speed
@@ -745,29 +750,48 @@ export class Match {
     top.attack = null; top.attackFrame = 0;
     bottom.attack = null; bottom.attackFrame = 0;
     top.vx = 0; top.vy = 0; bottom.vx = 0; bottom.vy = 0;
-    this.grapple = { top, bottom, position, centerX, timer: 0, submission: null };
+    // Scramble: rises while the bottom mashes for an escape, drops when the
+    // top lands ground-and-pound or transitions. At 100 the bottom escapes.
+    // sinceStrike: frames since the top last landed a strike (used to give
+    // a small grace period before the scramble can begin to climb again).
+    this.grapple = { top, bottom, position, centerX, timer: 0, submission: null,
+                     scramble: 0, sinceStrike: 9999 };
+    top.scrambleGauge = 0; bottom.scrambleGauge = 0;
   }
 
-  // Bottom attempts to get back to feet / sweep.
+  // Bottom mashes / struggles for an escape. Each call pushes the shared
+  // scramble gauge up — at 100 the bottom finally stands up. The top can
+  // suppress the gauge by landing ground-and-pound (see _resolveGroundAttack).
+  // This makes ground control feel like an active contest instead of a
+  // single coin flip on the very first frame.
   tryStandUp(f) {
     const g = this.grapple;
     if (!g || !g.top || !g.bottom) return false;
     if (g.submission) return false;
     const bottom = g.bottom;
     if (f !== bottom) return false;
-    if (bottom.stamina < 12) return false;
-    bottom.stamina -= 10;
-    const esc = bottom.wrestlingMul() + bottom.takedownDefMul();
-    // Top has positional advantage; longer pin = bottom more tired.
-    const hold = g.top.wrestlingMul() * 1.2;
-    const pinPenalty = g.timer > 180 ? -0.06 : 0;
-    // Mount/back-mount are harder to escape than guard/side.
-    const posBias = (g.position === 'mount' || g.position === 'back_mount') ? -0.08
-                    : g.position === 'guard' ? 0.05 : 0;
-    if (!_grappleSuccess(esc, hold, bottom, g.top, { bias: pinPenalty + posBias })) return false;
-    // Stand up
-    this._endGround('standup');
-    return true;
+    if (bottom.stamina < 4) return false;
+    bottom.stamina -= 3;
+    // Each press contributes a chunk of scramble. Skill differential
+    // accelerates / hampers the climb. Mount and back-mount are heavier
+    // pins than guard.
+    const skillGap = bottom.wrestlingMul() + bottom.takedownDefMul()
+                   - g.top.wrestlingMul() * 1.1;
+    const posBias = (g.position === 'mount' || g.position === 'back_mount') ? 0.65
+                    : g.position === 'side_control' ? 0.85
+                    : g.position === 'half_guard' ? 1.0
+                    : g.position === 'guard' ? 1.15
+                    : 1.0;
+    const push = (8 + skillGap * 4) * posBias;
+    g.scramble = Math.max(0, Math.min(100, g.scramble + Math.max(2, push)));
+    bottom.scrambleGauge = g.scramble;
+    g.top.scrambleGauge = g.scramble;
+    this.pushEvent('ground_struggle', { defender: bottom.side, scramble: g.scramble });
+    if (g.scramble >= 100) {
+      this._endGround('standup');
+      return true;
+    }
+    return false;
   }
 
   // Top attempts to pass guard / advance position; reserved for future.
@@ -1076,6 +1100,16 @@ export class Match {
     if (g.b) g.b.stamina = Math.max(0, g.b.stamina - burn);
     if (g.top) g.top.stamina = Math.max(0, g.top.stamina - burn * 0.6);
     if (g.bottom) g.bottom.stamina = Math.max(0, g.bottom.stamina - burn * 1.2);
+    // Scramble passively bleeds back down between mash inputs (the top
+    // re-establishes posture). Bleeds faster the longer it's been since
+    // the last strike landed (i.e. the bottom is fresh to push).
+    if (typeof g.scramble === 'number') {
+      g.sinceStrike = (g.sinceStrike || 0) + 1;
+      const decay = g.sinceStrike < 60 ? 0.45 : 0.18;
+      g.scramble = Math.max(0, g.scramble - decay);
+      if (g.bottom) g.bottom.scrambleGauge = g.scramble;
+      if (g.top) g.top.scrambleGauge = g.scramble;
+    }
 
     // Takedown animation: tick through shoot/drive/slam phases, then lock in ground.
     if (g.takedownAnim) {
@@ -1290,6 +1324,16 @@ export class Match {
       attacker.special = Math.min(attacker.maxSpecial, attacker.special + (a.meter || 0));
       this.shake = Math.max(this.shake, 5);
       this.hitstop = 2;
+      // A clean ground strike resets the bottom's scramble — the rocked
+      // defender has to re-build their escape from scratch. This is what
+      // makes ground-and-pound feel like an actual control mechanic.
+      const g = this.grapple;
+      if (g) {
+        g.scramble = Math.max(0, g.scramble - (a.kind === 'ground_elbow' ? 32 : 22));
+        g.sinceStrike = 0;
+        if (g.bottom) g.bottom.scrambleGauge = g.scramble;
+        if (g.top) g.top.scrambleGauge = g.scramble;
+      }
       this.pushEvent('hit', {
         attacker: attacker.side, defender: defender.side,
         dmg: actualDmg, blocked: false, kind: a.kind,

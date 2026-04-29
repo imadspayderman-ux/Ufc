@@ -606,6 +606,24 @@ function drawGrappleHUD(ctx, match) {
   const x = ARENA.width / 2;
   ctx.strokeText(label, x, 130);
   ctx.fillText(label, x, 130);
+  // Scramble gauge — only useful while a submission isn't running.
+  // Shows the bottom fighter's progress toward escaping the position.
+  if (!g.submission && typeof g.scramble === 'number') {
+    const bw = 220, bh = 8;
+    const bx = x - bw / 2, by = 142;
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+    ctx.fillStyle = '#0a0e22';
+    ctx.fillRect(bx, by, bw, bh);
+    const frac = Math.max(0, Math.min(1, g.scramble / 100));
+    // Gradient from blue (low) → amber (high) so the player can read the
+    // urgency of the bottom's mash at a glance.
+    ctx.fillStyle = frac > 0.7 ? '#ffaa44' : frac > 0.4 ? '#ddcc44' : '#44aaff';
+    ctx.fillRect(bx, by, bw * frac, bh);
+    ctx.fillStyle = '#cce0ff';
+    ctx.font = 'bold 10px system-ui';
+    ctx.fillText('SCRAMBLE', x, by - 4);
+  }
   if (g.submission) {
     const s = g.submission;
     // ----- UFC 5-style two-gauge readout -----
