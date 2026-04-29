@@ -382,9 +382,17 @@ function loop() {
 
 function handleEvent(ev) {
   if (ev.type === 'hit') {
-    renderer.spawnParticles(ev.x, ev.y, ev.blocked ? 6 : 14, ev.blocked ? ['#aaa', '#ccc'] : ['#ff5566', '#ffcc33', '#fff']);
+    // Sparks / blood mist scale with damage for a visibly heavier hit.
+    const sparkCount = ev.blocked ? 6 : (10 + Math.min(18, Math.round(ev.dmg * 0.8)));
+    renderer.spawnParticles(
+      ev.x, ev.y, sparkCount,
+      ev.blocked ? ['#aaa', '#ccc'] : ['#ff2244', '#ffaa22', '#fff', '#ffdd55'],
+      { spread: ev.blocked ? 6 : 12 + Math.min(10, ev.dmg * 0.3) }
+    );
+    // Expanding impact ring + popup on clean connections.
     if (!ev.blocked) {
-      renderer.spawnPopup(ev.x, ev.y - 30, '-' + ev.dmg, '#ffcc33', ev.dmg >= 15 ? 36 : 24);
+      renderer.spawnImpactRing(ev.x, ev.y, ev.dmg);
+      renderer.spawnPopup(ev.x, ev.y - 30, '-' + ev.dmg, ev.dmg >= 15 ? '#ff4455' : '#ffcc33', ev.dmg >= 15 ? 40 : 26);
     } else {
       renderer.spawnPopup(ev.x, ev.y - 30, 'BLOCK', '#aaccff', 18);
     }

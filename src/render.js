@@ -32,6 +32,29 @@ export class Renderer {
     this.ctx = canvas.getContext('2d');
     this.particles = [];
     this.popups = [];
+    this.impactRings = [];
+  }
+
+  // Expanding impact ring spawned at strike connect. Gives a visible burst
+  // that sells the force of the punch. Ring size/thickness scale with damage.
+  spawnImpactRing(x, y, dmg) {
+    const size = dmg >= 16 ? 'heavy' : dmg >= 10 ? 'medium' : 'light';
+    this.impactRings.push({
+      x, y,
+      r0: size === 'heavy' ? 16 : size === 'medium' ? 12 : 8,
+      rMax: size === 'heavy' ? 96 : size === 'medium' ? 68 : 46,
+      life: size === 'heavy' ? 22 : 16,
+      maxLife: size === 'heavy' ? 22 : 16,
+      color: size === 'heavy' ? '#ff3040' : '#ffcc44',
+      stroke: size === 'heavy' ? 5 : 3,
+    });
+    // Secondary inner ring for heavier hits.
+    if (size !== 'light') {
+      this.impactRings.push({
+        x, y, r0: 4, rMax: size === 'heavy' ? 50 : 34,
+        life: 10, maxLife: 10, color: '#ffffff', stroke: 2,
+      });
+    }
   }
 
   spawnParticles(x, y, n, palette = ['#ffcc33', '#ff5566', '#fff'], opts = {}) {
@@ -234,19 +257,17 @@ export class Renderer {
     drawLeg(ctx, pose.legR, p, bd);
     drawLeg(ctx, pose.legL, p, bd);
 
-    // pelvis / FIGHT SHORTS — UFC-style with waistband, logo, side stripe
+    // pelvis / FIGHT SHORTS — slightly darker shade of the fighter's body
+    // color so the shorts read as clothing without looking like a black hole
+    // against the now-vibrant body. Glove-color waistband stripe identifies
+    // the fighter.
     ctx.save();
     ctx.translate(pose.pelvis.x, pose.pelvis.y);
-    const trunks = p.trunks;
-    const trunksDark = shadeColor(trunks, -0.3);
-    const trunksLight = shadeColor(trunks, 0.18);
     const accent = p.accent || '#ffd34a';
+    const shortsCol = shadeColor(p.body || p.skin || '#222', -0.55);
 
-    // Main shorts body with a subtle vertical gradient
-    const sg = ctx.createLinearGradient(0, -4, 0, 34);
-    sg.addColorStop(0, trunksLight);
-    sg.addColorStop(1, trunksDark);
-    ctx.fillStyle = sg;
+    // shorts silhouette
+    ctx.fillStyle = shortsCol;
     ctx.beginPath();
     ctx.moveTo(-28 * bd, -6);
     ctx.lineTo(-30 * bd, 28);
@@ -259,46 +280,23 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
 
-    // Side stripe (accent color, both sides)
+    // signature-color waistband (the fighter's unique color)
     ctx.fillStyle = accent;
-    ctx.fillRect(-28 * bd, 4, 3, 24);
-    ctx.fillRect(25 * bd, 4, 3, 24);
-    // Secondary contrast stripe
-    ctx.fillStyle = p.shorts2 || '#0f0f0f';
-    ctx.fillRect(-25 * bd, 4, 1.5, 24);
-    ctx.fillRect(23 * bd, 4, 1.5, 24);
+    ctx.fillRect(-28 * bd, -8, 56 * bd, 3);
 
-    // Logo plate (fake brand badge in center-front)
-    ctx.fillStyle = withAlpha(accent, 0.9);
+    // thin outline around the shorts so they pop
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.ellipse(0, 12, 10 * bd, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#0a0a0a';
-    ctx.font = 'bold 7px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('UFN', 0, 13);
-
-    // WAISTBAND — thick belt with fighter accent trim
-    ctx.fillStyle = '#0a0a0a';
-    ctx.fillRect(-28 * bd, -10, 56 * bd, 8);
-    ctx.fillStyle = accent;
-    ctx.fillRect(-28 * bd, -10, 56 * bd, 2);
-    ctx.fillStyle = shadeColor(accent, 0.2);
-    ctx.fillRect(-28 * bd, -9, 56 * bd, 1);
-    // Name tag on waistband (simple gold rectangle)
-    ctx.fillStyle = accent;
-    ctx.fillRect(-10, -8, 20, 4);
-    ctx.fillStyle = '#0a0a0a';
-    ctx.font = 'bold 5px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(((f.data && (f.data.shortName || f.data.name)) || '').toUpperCase().slice(0, 6), 0, -5);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-
-    // Inseam shadow (cleft between thighs)
-    ctx.fillStyle = withAlpha(trunksDark, 0.6);
-    ctx.fillRect(-1, 22, 2, 12);
+    ctx.moveTo(-28 * bd, -6);
+    ctx.lineTo(-30 * bd, 28);
+    ctx.quadraticCurveTo(-26 * bd, 34, -8, 34);
+    ctx.lineTo(-6, 28);
+    ctx.lineTo(6, 28);
+    ctx.lineTo(8, 34);
+    ctx.quadraticCurveTo(26 * bd, 34, 30 * bd, 28);
+    ctx.lineTo(28 * bd, -6);
+    ctx.stroke();
 
     ctx.restore();
 
@@ -355,6 +353,21 @@ export class Renderer {
   }
 
   drawEffects(ctx) {
+    // impact rings (draw first — under particles)
+    this.impactRings = this.impactRings.filter((r) => {
+      const k = 1 - r.life / r.maxLife;                // 0 -> 1 as it ages
+      const radius = r.r0 + (r.rMax - r.r0) * k;
+      const a = Math.max(0, r.life / r.maxLife);       // fade out
+      ctx.save();
+      ctx.lineWidth = r.stroke;
+      ctx.strokeStyle = withAlpha(r.color, a);
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      r.life--;
+      return r.life > 0;
+    });
     // particles
     this.particles = this.particles.filter((p) => {
       p.x += p.vx; p.y += p.vy;
@@ -579,7 +592,10 @@ function computePose(f, t) {
   // Place joint shoulders just inside that edge so the deltoid cap hugs the torso.
   const shoulderEdgeX = 26 * bd;
   const shoulderWorldY = -68 * ht - 82;  // pelvis.y + shoulderY in torso local coords
-  // Defaults: proper boxing guard — elbows bent out, gloves up in front of jaw.
+  // Defaults: relaxed stickman standing pose — arms hang free at the sides
+  // with a slight bend (NOT permanently glued to the head). The arms only
+  // raise into a guard during 'block' or during the chamber/recovery of an
+  // attack. This gives the figure a natural, body-free silhouette.
   const pose = {
     pelvis: { x: 0, y: -82 },
     torsoAngle: 0,
@@ -588,13 +604,13 @@ function computePose(f, t) {
     legR: { hipX: 12 * bd,  hipY: -78, kneeX: 20 * bd,  kneeY: -42, footX: 28 * bd,  footY: 0 }, // lead leg (wider stance)
     armBack: {
       shoulderX: -shoulderEdgeX, shoulderY: shoulderWorldY,
-      elbowX: -18 * bd, elbowY: -118,
-      handX: -2, handY: -138,
+      elbowX: -22 * bd, elbowY: -114,
+      handX: -16 * bd, handY: -76,
     },
     armFront: {
       shoulderX: shoulderEdgeX, shoulderY: shoulderWorldY,
-      elbowX: 30 * bd, elbowY: -118,
-      handX: 20 * bd, handY: -140,
+      elbowX: 22 * bd, elbowY: -114,
+      handX: 16 * bd, handY: -76,
     },
   };
 
@@ -612,48 +628,62 @@ function computePose(f, t) {
     pose.armFront.shoulderY += breath * 0.3;
   }
   if (f.state === 'walk') {
-    // Direction-aware walk: forward = confident stride; backward = shuffle step w/ hands high.
+    // Realistic gait: counter-rotated hips & shoulders, heel-to-toe foot lift,
+    // pronounced arm swing in counter-phase to the legs, head bob with stride.
     const dir = typeof f.movingDirection === 'number' ? f.movingDirection : 1;
     const retreat = dir < 0;
-    const strideFreq = 0.32 * cadence * (retreat ? 0.7 : 1.0);
+    const strideFreq = 0.34 * cadence * (retreat ? 0.7 : 1.0);
     const strideMag = retreat ? 0.6 : 1.0;
-    const stride = Math.sin(t * strideFreq) * strideMag;
+    const stride = Math.sin(t * strideFreq) * strideMag;          // -1..1
     const strideAbs = Math.abs(stride);
-    const liftR = Math.max(0, stride);        // lead leg lifts on positive phase
-    const liftL = Math.max(0, -stride);       // back leg lifts on negative phase
-    // Foot plant — lifted foot tilts on toe/heel via footY offset
-    pose.legR.footX = 24 * bd + stride * (retreat ? 10 : 16);
-    pose.legR.footY = -liftR * 16 * bobAmp;
-    pose.legR.kneeX = 16 * bd + stride * 6;
-    pose.legR.kneeY = -42 - liftR * 14 * bobAmp;   // higher knee lift for lighter fighters
-    pose.legL.footX = -20 * bd + stride * (retreat ? 10 : 16);
-    pose.legL.footY = -liftL * 16 * bobAmp;
-    pose.legL.kneeX = -14 * bd + stride * 6;
-    pose.legL.kneeY = -42 - liftL * 14 * bobAmp;
-    // Pelvis rise-fall (mid-step = low, step-plant = high), slight twist.
-    pose.pelvis.y = -82 + strideAbs * 2 * bobAmp - 2;
-    pose.pelvis.x = stride * (retreat ? 1 : 2);
-    // Heavier fighters lean forward slightly; retreat tilts torso back.
-    const lean = (1 - bobAmp) * 0.12 + (retreat ? -0.03 : 0.02);
-    pose.torsoAngle = -stride * 0.05 + lean;
-    // Retreat = hands stay in higher guard; advance = natural arm swing (counter-phase).
+    const liftR = Math.max(0, stride);   // R leg lifts on positive phase
+    const liftL = Math.max(0, -stride);  // L leg lifts on negative phase
+
+    // FEET — lifted leg pulls forward + up, planted leg pushes back + grips ground.
+    // The foot rolls heel-to-toe so on lift the foot tilts forward (footY goes up).
+    pose.legR.footX = 24 * bd + stride * (retreat ? 10 : 22);
+    pose.legR.footY = -liftR * 22 * bobAmp;
+    pose.legR.kneeX = 16 * bd + stride * 10;
+    pose.legR.kneeY = -42 - liftR * 22 * bobAmp;
+    pose.legL.footX = -20 * bd + stride * (retreat ? 10 : 22);
+    pose.legL.footY = -liftL * 22 * bobAmp;
+    pose.legL.kneeX = -14 * bd + stride * 10;
+    pose.legL.kneeY = -42 - liftL * 22 * bobAmp;
+    // Hips raise on each plant, dip mid-step — classic walking sine
+    pose.pelvis.y = -82 + strideAbs * 4 * bobAmp - 3;
+    pose.pelvis.x = stride * (retreat ? 1 : 3);
+
+    // TORSO COUNTER-ROTATION — shoulders rotate OPPOSITE to hips for proper gait.
+    // (When R foot is forward, R hip is forward, but R shoulder is BACK.)
+    const lean = (1 - bobAmp) * 0.10 + (retreat ? -0.04 : 0.03);
+    pose.torsoAngle = -stride * 0.12 + lean;
+
+    // ARMS — natural pendulum swing at hip level (NOT raised guard).
+    // Hand swings forward when same-side leg is back, in counter-phase.
     if (retreat) {
-      pose.armFront.handX = 16; pose.armFront.handY = -152;
-      pose.armFront.elbowX = 14 * bd; pose.armFront.elbowY = -140;
-      pose.armBack.handX = 8;  pose.armBack.handY = -150;
-      pose.armBack.elbowX = -10 * bd; pose.armBack.elbowY = -138;
+      // Backpedaling: hands stay slightly raised but still relaxed, small swing.
+      pose.armFront.handX = 16 * bd - stride * 8; pose.armFront.handY = -90;
+      pose.armFront.elbowX = 20 * bd;            pose.armFront.elbowY = -118;
+      pose.armBack.handX = -12 * bd + stride * 8;  pose.armBack.handY = -90;
+      pose.armBack.elbowX = -18 * bd;             pose.armBack.elbowY = -118;
     } else {
-      pose.armFront.handX = 26 - stride * 18;
-      pose.armFront.handY = -128 + strideAbs * 4;
-      pose.armFront.elbowX = 20 * bd - stride * 8;
-      pose.armFront.elbowY = -128 + strideAbs * 2;
-      pose.armBack.handX = 0 + stride * 18;
-      pose.armBack.handY = -128 + strideAbs * 4;
-      pose.armBack.elbowX = -14 * bd + stride * 8;
-      pose.armBack.elbowY = -125 + strideAbs * 2;
+      // Forward walk: pronounced opposite-arm pendulum swing at hip level
+      // — like a real walk, NOT a held-up boxing guard.
+      // Front arm = lead-side; swings BACKWARD when lead leg moves forward.
+      pose.armFront.handX = 16 * bd - stride * 30;
+      pose.armFront.handY = -76 + strideAbs * 6;
+      pose.armFront.elbowX = 22 * bd - stride * 16;
+      pose.armFront.elbowY = -114 + strideAbs * 2;
+      // Back arm = rear-side; swings FORWARD when lead leg moves forward.
+      pose.armBack.handX = -16 * bd + stride * 30;
+      pose.armBack.handY = -76 + strideAbs * 6;
+      pose.armBack.elbowX = -22 * bd + stride * 16;
+      pose.armBack.elbowY = -114 + strideAbs * 2;
     }
-    // Head bobs slightly with stride
-    pose.headOffset.y = -152 * ht + strideAbs * 2 * bobAmp - 2;
+
+    // HEAD — bobs vertically with stride, sways laterally with shoulder rotation
+    pose.headOffset.x = -2 + stride * 3;
+    pose.headOffset.y = -152 * ht + strideAbs * 3 * bobAmp - 2;
   }
   if (f.state === 'crouch') {
     pose.pelvis.y = -52;
@@ -683,26 +713,31 @@ function computePose(f, t) {
     pose.legR.kneeY = -36; pose.legR.footY = -20;
   }
   if (f.state === 'hit') {
-    // UFC 5-style hit-react: head whips AWAY from where the strike came from,
-    // shoulder rocks, weight transfers to the back foot, arms drop briefly
-    // then rise back to guard. Direction is taken from f.hitReactDir which the
-    // engine sets at impact (\u00b11 = strike from left/right of fighter).
-    const k = Math.max(0, Math.min(1, f.stunFrames / 14)); // 1 at impact \u2192 0 at recovery
+    // Dramatic UFC-style hit reaction: head whips AWAY from impact,
+    // shoulders rock, weight loads onto the back leg, arms briefly drop
+    // (defense breaks) then come back to guard. Heavier strikes (more
+    // remaining stunFrames) produce stronger whip/recoil.
+    const k = Math.max(0, Math.min(1, f.stunFrames / 14));   // 1 at impact -> 0 at recovery
     const dir = f.hitReactDir || 1;
-    // In local coords +x = forward (toward facing). Strike from front pushes head -x (back).
-    // hitReactDir is in WORLD coords; convert to local using f.facing.
-    const localDir = dir * (f.facing || 1);
-    const whip = k * 12; // peak whip distance
+    const localDir = dir * (f.facing || 1);                  // +1 = strike from front
+    const whip = k * 18;                                     // bigger head whip
+    // Head whips back AND down on impact, then rises.
     pose.headOffset.x = -2 - localDir * whip;
-    pose.headOffset.y = -148 + 6 * k;
-    // Torso recoils away from impact, weight loads onto back leg.
-    pose.torsoAngle = -localDir * 0.22 * k;
-    pose.pelvis.x = -localDir * 4 * k;
-    // Arms drop a touch (defense breaks for a moment) then come back up.
-    pose.armBack.handY = -120 + 10 * k; pose.armBack.handX = -10 - localDir * 4 * k;
-    pose.armFront.handY = -120 + 10 * k; pose.armFront.handX = 22 - localDir * 4 * k;
-    // Back leg slides slightly to absorb the blow.
-    pose.legL.footX = -22 * bd - localDir * 6 * k;
+    pose.headOffset.y = -150 + 10 * k;
+    // Torso bows away from impact for extra body language.
+    pose.torsoAngle = -localDir * 0.34 * k;
+    pose.pelvis.x = -localDir * 7 * k;
+    pose.pelvis.y = -82 + 4 * k;                              // small dip / stagger
+    // Arms drop momentarily (defense compromised) — fronthand drops more
+    // for a strike from the front. Hands stay roughly at chest level so
+    // they don't reach back up to head.
+    pose.armBack.handY  = -90 - 18 * (1 - k); pose.armBack.handX  = -14 - localDir * 6 * k;
+    pose.armBack.elbowY = -116 + 4 * k;
+    pose.armFront.handY = -88 - 16 * (1 - k); pose.armFront.handX = 18 - localDir * 8 * k;
+    pose.armFront.elbowY = -116 + 4 * k;
+    // Back leg slides further to absorb. Front leg buckles slightly.
+    pose.legL.footX = -22 * bd - localDir * 9 * k;
+    pose.legR.kneeY = -42 + 4 * k;
   }
   if (f.state === 'down') {
     // Lying flat
@@ -802,21 +837,35 @@ function computePose(f, t) {
     pose.armFront.shoulderY = -50; pose.armFront.elbowY = -22; pose.armFront.elbowX = 18; pose.armFront.handY = -4 + pulse * 1; pose.armFront.handX = 24;
   }
   if (f.state === 'clinch') {
-    // Both fighters locked up — wide base, forward lean, arms up in collar-tie / under-hook posture.
-    const pulse = Math.sin(t * 0.25) * 1.2;
-    pose.pelvis.x = 6; pose.pelvis.y = -76 + pulse * 0.5;
-    pose.torsoAngle = 0.12;
-    // Wide base stance
-    pose.legL.footX = -26 * bd; pose.legL.footY = 0; pose.legL.kneeX = -18 * bd; pose.legL.kneeY = -46;
-    pose.legR.footX =  30 * bd; pose.legR.footY = 0; pose.legR.kneeX =  22 * bd; pose.legR.kneeY = -46;
-    // Both arms raised, reaching across the center line toward the opponent.
-    pose.armBack.shoulderX = -24 * bd; pose.armBack.shoulderY = -72 * ht - 82;
-    pose.armBack.elbowX = 4;  pose.armBack.elbowY = -156 + pulse;
-    pose.armBack.handX  = 34; pose.armBack.handY  = -162 + pulse;
-    pose.armFront.shoulderX = 26 * bd; pose.armFront.shoulderY = -72 * ht - 82;
-    pose.armFront.elbowX = 20; pose.armFront.elbowY = -148 + pulse;
-    pose.armFront.handX  = 48; pose.armFront.handY  = -154 + pulse;
-    pose.headOffset.x = 8; pose.headOffset.y = -150 * ht;
+    // Both fighters locked up in MMA clinch — wide athletic base, hips and
+    // head pushed forward into the opponent, one arm up in collar-tie
+    // (gripping back of neck) and the other deep under-hook (around
+    // opponent's shoulder). The whole body tilts forward as if leaning
+    // bodyweight onto the opponent.
+    const pulse = Math.sin(t * 0.18) * 1.5;        // breathing / push-pull
+    const sway  = Math.sin(t * 0.08) * 0.8;        // weight shift between feet
+    pose.pelvis.x = 4 + sway; pose.pelvis.y = -74 + pulse * 0.4;
+    pose.torsoAngle = 0.22;                         // strong forward lean
+    // Wide athletic base — feet planted, knees bent for power & balance.
+    pose.legL.footX = -28 * bd;        pose.legL.footY = 0;
+    pose.legL.kneeX = -20 * bd;        pose.legL.kneeY = -42;
+    pose.legL.hipX  = -10 * bd;        pose.legL.hipY  = -76;
+    pose.legR.footX =  34 * bd;        pose.legR.footY = 0;
+    pose.legR.kneeX =  24 * bd;        pose.legR.kneeY = -42;
+    pose.legR.hipX  =  10 * bd;        pose.legR.hipY  = -76;
+    // BACK arm = collar-tie. Reaches OVER the opponent's shoulder, grabs the
+    // back of the neck. Hand goes far across center line and slightly up.
+    pose.armBack.shoulderX = -22 * bd; pose.armBack.shoulderY = -72 * ht - 76;
+    pose.armBack.elbowX = 18;          pose.armBack.elbowY = -148 + pulse;
+    pose.armBack.handX  = 70 + pulse;  pose.armBack.handY  = -148 + pulse;
+    // FRONT arm = under-hook. Reaches UNDER the opponent's armpit, hand
+    // wraps behind the back. Hand goes deep across at chest level.
+    pose.armFront.shoulderX = 24 * bd; pose.armFront.shoulderY = -72 * ht - 76;
+    pose.armFront.elbowX = 28;         pose.armFront.elbowY = -126 + pulse;
+    pose.armFront.handX  = 78 - pulse; pose.armFront.handY  = -120 + pulse;
+    // Head pushes forward, slightly tilted — chin tucks into opponent's
+    // chest/shoulder for the classic Muay-Thai plumb-clinch posture.
+    pose.headOffset.x = 14; pose.headOffset.y = -148 * ht;
     // Clinch attack overlay (knee / elbow / dirty punch) — animated via f.attack progress
     if (f.attack) {
       const ca = f.attack;
@@ -896,109 +945,318 @@ function computePose(f, t) {
     }
   }
   if (f.state === 'ground_top') {
-    // Kneeling astride opponent (mount). Pelvis elevated, torso upright, arms up for GnP.
-    const pulse = Math.sin(t * 0.22) * 1.3;
-    pose.pelvis.x = 0; pose.pelvis.y = -52 + pulse * 0.6;
-    pose.torsoAngle = -0.05;
-    // Knees planted on either side (mount position)
-    pose.legL.hipX = -10 * bd; pose.legL.hipY = -48; pose.legL.kneeX = -24 * bd; pose.legL.kneeY = -20; pose.legL.footX = -14 * bd; pose.legL.footY = 0;
-    pose.legR.hipX =  10 * bd; pose.legR.hipY = -48; pose.legR.kneeX =  24 * bd; pose.legR.kneeY = -20; pose.legR.footX =  14 * bd; pose.legR.footY = 0;
-    // Arms raised high, ready to rain strikes
-    pose.armBack.shoulderX = -20 * bd;  pose.armBack.shoulderY = -100;
-    pose.armBack.elbowX = -12;  pose.armBack.elbowY = -136; pose.armBack.handX = -4;  pose.armBack.handY = -158;
-    pose.armFront.shoulderX = 22 * bd;  pose.armFront.shoulderY = -100;
-    pose.armFront.elbowX = 14;  pose.armFront.elbowY = -140; pose.armFront.handX = 22; pose.armFront.handY = -162;
-    pose.headOffset.x = -2; pose.headOffset.y = -130;
-    // Overlay attack animation if mid-GnP strike
+    // Position-specific top pose. Each position reads clearly at a glance:
+    //   mount         - kneeling astride opponent's torso (knees out wide)
+    //   guard         - kneeling UPRIGHT between opponent's legs (postured up)
+    //   side_control  - chest on opponent's chest, perpendicular (low, wide)
+    //   back_mount    - seated behind with hooks in, arms reaching around
+    const pos = f.groundPosition || 'mount';
+    const breath = Math.sin(t * 0.18) * 1.6;
+    const press  = Math.sin(t * 0.10) * 1;
+    if (pos === 'guard') {
+      // In opponent's closed guard: kneeling upright, hips back, posture up.
+      pose.pelvis.x = 0; pose.pelvis.y = -44 + breath * 0.4;
+      pose.torsoAngle = 0.08;                         // posture slightly forward
+      // Knees planted on ground, feet tucked under (seiza-like).
+      pose.legL.hipX = -10 * bd; pose.legL.hipY = -40; pose.legL.kneeX = -18 * bd; pose.legL.kneeY = -10; pose.legL.footX = -10 * bd; pose.legL.footY = 0;
+      pose.legR.hipX =  10 * bd; pose.legR.hipY = -40; pose.legR.kneeX =  18 * bd; pose.legR.kneeY = -10; pose.legR.footX =  10 * bd; pose.legR.footY = 0;
+      // Hands posting on opponent's chest/hips for base.
+      pose.armBack.shoulderX = -18 * bd;  pose.armBack.shoulderY = -94;
+      pose.armBack.elbowX = -8;  pose.armBack.elbowY = -76; pose.armBack.handX = 6;  pose.armBack.handY = -62 + breath;
+      pose.armFront.shoulderX = 20 * bd; pose.armFront.shoulderY = -94;
+      pose.armFront.elbowX = 14; pose.armFront.elbowY = -76; pose.armFront.handX = 28; pose.armFront.handY = -62 + breath;
+      pose.headOffset.x = -2; pose.headOffset.y = -122;
+    } else if (pos === 'side_control') {
+      // Side control: chest pressed onto opponent, torso PERPENDICULAR to
+      // opponent's body. Low and wide — hips sprawled out.
+      pose.pelvis.x = press; pose.pelvis.y = -30 + breath * 0.3;
+      pose.torsoAngle = 0.42;                         // heavy forward tilt
+      // One leg forward (knee up near opponent's hip), other leg sprawled back.
+      pose.legL.hipX = -10 * bd; pose.legL.hipY = -26; pose.legL.kneeX = -30 * bd; pose.legL.kneeY = -12; pose.legL.footX = -48 * bd; pose.legL.footY = 0;
+      pose.legR.hipX =  12 * bd; pose.legR.hipY = -26; pose.legR.kneeX =  28 * bd; pose.legR.kneeY =  -4; pose.legR.footX =  42 * bd; pose.legR.footY = 0;
+      // Arms wrap head + far-side hip (crossface + underhook).
+      pose.armBack.shoulderX = -18 * bd;  pose.armBack.shoulderY = -80;
+      pose.armBack.elbowX = -2;  pose.armBack.elbowY = -58; pose.armBack.handX = 20;  pose.armBack.handY = -44 + breath;
+      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -80;
+      pose.armFront.elbowX = 28; pose.armFront.elbowY = -56; pose.armFront.handX = 44; pose.armFront.handY = -40 + breath;
+      pose.headOffset.x = 18; pose.headOffset.y = -98;
+    } else if (pos === 'back_mount') {
+      // Back mount: seated behind with hooks (legs wrapped around opponent's
+      // hips from behind). Arms reaching around front to grip.
+      pose.pelvis.x = -2; pose.pelvis.y = -46 + breath * 0.4;
+      pose.torsoAngle = 0.18;                         // slight forward lean over opponent's back
+      // Hooks: legs reach forward/around opponent's hips (from behind).
+      pose.legL.hipX = -10 * bd; pose.legL.hipY = -40; pose.legL.kneeX =  6 * bd; pose.legL.kneeY = -20; pose.legL.footX = 22 * bd; pose.legL.footY = -10;
+      pose.legR.hipX =  10 * bd; pose.legR.hipY = -40; pose.legR.kneeX = 28 * bd; pose.legR.kneeY = -16; pose.legR.footX = 44 * bd; pose.legR.footY = -6;
+      // Arms reach AROUND and forward (hunting the choke).
+      pose.armBack.shoulderX = -18 * bd;  pose.armBack.shoulderY = -96;
+      pose.armBack.elbowX = 4;  pose.armBack.elbowY = -94; pose.armBack.handX = 28;  pose.armBack.handY = -90 + breath;
+      pose.armFront.shoulderX = 20 * bd; pose.armFront.shoulderY = -96;
+      pose.armFront.elbowX = 22; pose.armFront.elbowY = -94; pose.armFront.handX = 46; pose.armFront.handY = -90 + breath;
+      pose.headOffset.x = 10; pose.headOffset.y = -122;
+    } else {
+      // FULL MOUNT (default): kneeling astride, knees wide, arms cocked up
+      // for ground-and-pound.
+      pose.pelvis.x = press; pose.pelvis.y = -50 + breath * 0.5;
+      pose.torsoAngle = -0.06;
+      pose.legL.hipX = -12 * bd; pose.legL.hipY = -46; pose.legL.kneeX = -28 * bd; pose.legL.kneeY = -18; pose.legL.footX = -16 * bd; pose.legL.footY = 0;
+      pose.legR.hipX =  12 * bd; pose.legR.hipY = -46; pose.legR.kneeX =  28 * bd; pose.legR.kneeY = -18; pose.legR.footX =  16 * bd; pose.legR.footY = 0;
+      pose.armBack.shoulderX = -22 * bd;  pose.armBack.shoulderY = -100;
+      pose.armBack.elbowX = -14;  pose.armBack.elbowY = -134 + breath; pose.armBack.handX = -4;  pose.armBack.handY = -156 + breath;
+      pose.armFront.shoulderX = 22 * bd;  pose.armFront.shoulderY = -100;
+      pose.armFront.elbowX = 16;  pose.armFront.elbowY = -140 + breath; pose.armFront.handX = 24; pose.armFront.handY = -162 + breath;
+      pose.headOffset.x = -2; pose.headOffset.y = -132;
+    }
+    // Overlay attack animation if mid-GnP strike. Adds chamber-back, then
+    // explosive downward arc to opponent's head, and slow recovery.
     if (f.attack) {
       const ca = f.attack;
-      const peak = f.attackFrame < ca.startup ? (f.attackFrame / ca.startup) :
-                    f.attackFrame < ca.startup + ca.active ? 1 :
-                    1 - (f.attackFrame - ca.startup - ca.active) / ca.recovery;
-      const ease = Math.sin(peak * Math.PI);
+      const total = ca.startup + ca.active + ca.recovery;
+      const af2 = f.attackFrame;
+      const cham = af2 < ca.startup ? (af2 / ca.startup) : 1;
+      const drop = af2 < ca.startup ? 0
+                  : af2 < ca.startup + ca.active ? 1
+                  : 1 - (af2 - ca.startup - ca.active) / ca.recovery;
+      const easeDrop = drop * drop;          // accelerating downward strike
+      void total;
       if (ca.kind === 'ground_punch') {
-        pose.armFront.handX = 22 + ease * 18;
-        pose.armFront.handY = -162 + ease * 90;
-        pose.armFront.elbowX = 14 + ease * 10;
-        pose.armFront.elbowY = -140 + ease * 50;
+        // Chamber: arm pulls UP and BACK. Drop: fist arcs DOWN fast onto
+        // the opponent's head. Body leans forward into the strike.
+        pose.armFront.handX = 24 + cham * 6 + easeDrop * 30;
+        pose.armFront.handY = -162 - cham * 16 + easeDrop * 110;
+        pose.armFront.elbowX = 16 + cham * 4 + easeDrop * 16;
+        pose.armFront.elbowY = -140 - cham * 8 + easeDrop * 60;
+        pose.torsoAngle = -0.06 + easeDrop * 0.18;
+        pose.pelvis.y = -50 + easeDrop * 6;
       } else if (ca.kind === 'ground_elbow') {
-        pose.armFront.handX = 12 + ease * 18;
-        pose.armFront.handY = -170 + ease * 110;
-        pose.armFront.elbowX = 8 + ease * 14;
-        pose.armFront.elbowY = -150 + ease * 30;
+        // Elbow strike: more vertical drop, less arm extension.
+        pose.armFront.handX = 14 + easeDrop * 22;
+        pose.armFront.handY = -170 - cham * 8 + easeDrop * 130;
+        pose.armFront.elbowX = 10 + easeDrop * 18;
+        pose.armFront.elbowY = -150 - cham * 6 + easeDrop * 60;
+        pose.torsoAngle = -0.06 + easeDrop * 0.24;
+        pose.pelvis.y = -50 + easeDrop * 8;
       }
     }
   }
   if (f.state === 'sub_offense') {
-    // Locking in a submission. During the lock-in window we animate from
-    // "reaching out" to "fully wrapped" so the wrap-up is visible. After lock-in
-    // the pose holds steady at the wrapped position with a subtle pull pulse.
+    // Locking in a submission. We animate the WRAP-UP from "reaching out"
+    // toward "fully cinched" then hold a tight, distinctive pose for each
+    // submission type, with a subtle pulling pulse to convey isometric tension.
     const lockFrame = f.subLockFrame || 0;
     const lockTotal = f.subLockTotal || 0;
     const lockK = lockTotal > 0 ? Math.max(0, Math.min(1, lockFrame / lockTotal)) : 1;
     const reach = 1 - lockK; // 1 at start of lock-in, 0 once fully wrapped
     const subKind = f.subLockKind;
-    pose.pelvis.x = 0; pose.pelvis.y = -56 - reach * 6;
-    pose.torsoAngle = 0.24 + reach * 0.1;
-    pose.legL.kneeX = -22 * bd; pose.legL.kneeY = -22; pose.legL.footX = -14 * bd; pose.legL.footY = 0;
-    pose.legR.kneeX =  22 * bd; pose.legR.kneeY = -22; pose.legR.footX =  14 * bd; pose.legR.footY = 0;
-    if (subKind === 'armbar' || subKind === 'kimura') {
-      // Arms reach out, then snap back into a tight cross-body lock on the limb.
-      pose.armBack.shoulderX = -16 * bd; pose.armBack.shoulderY = -96;
-      pose.armBack.elbowX = 14 + reach * 16; pose.armBack.elbowY = -110 - reach * 8;
-      pose.armBack.handX = 30 + reach * 28; pose.armBack.handY = -118 - reach * 18;
-      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -96;
-      pose.armFront.elbowX = 22 + reach * 14; pose.armFront.elbowY = -108 - reach * 6;
-      pose.armFront.handX = 32 + reach * 24; pose.armFront.handY = -116 - reach * 14;
-    } else if (subKind === 'rear_naked' || subKind === 'guillotine') {
-      // Choke — arms wrap around the neck/throat, hands clinched together.
-      pose.armBack.shoulderX = -14 * bd; pose.armBack.shoulderY = -98;
-      pose.armBack.elbowX = 6; pose.armBack.elbowY = -130 - reach * 4;
-      pose.armBack.handX = 22; pose.armBack.handY = -132 - reach * 8;
-      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -98;
-      pose.armFront.elbowX = 18; pose.armFront.elbowY = -126 - reach * 4;
-      pose.armFront.handX = 26; pose.armFront.handY = -130 - reach * 8;
+    const pull  = Math.sin(t * 0.32) * 2;            // hard isometric pulling
+    const cinch = lockTotal === 0 ? pull : 0;        // only after lock-in is set
+
+    if (subKind === 'armbar') {
+      // ARMBAR: attacker is on his BACK with hips up against opponent's
+      // shoulder. Both legs clamped over opponent's chest. Both hands
+      // gripping opponent's wrist and pulling it down past the hip.
+      // Torso lies BACK toward the floor (big negative angle).
+      pose.pelvis.x = 0; pose.pelvis.y = -22 - reach * 4;
+      pose.torsoAngle = -1.25;                  // ~ -72° — lying back
+      // Legs SCISSORED VERTICALLY on opponent's chest — knees high.
+      pose.legL.hipX = -8; pose.legL.hipY = -22; pose.legL.kneeX = -12; pose.legL.kneeY = -82; pose.legL.footX = -8; pose.legL.footY = -120;
+      pose.legR.hipX =  8; pose.legR.hipY = -22; pose.legR.kneeX =  20; pose.legR.kneeY = -76; pose.legR.footX =  44; pose.legR.footY = -90;
+      // Both hands grip the opponent's wrist (between the attacker's thighs)
+      // and pull DOWN toward the hip. Position both hands close together.
+      pose.armBack.shoulderX = -28; pose.armBack.shoulderY = -38;
+      pose.armBack.elbowX = -6 + reach * 14;  pose.armBack.elbowY = -52 - reach * 4;
+      pose.armBack.handX  = 18 + reach * 16 + cinch * 0.4; pose.armBack.handY  = -78 - reach * 8 + cinch * 0.6;
+      pose.armFront.shoulderX = -24; pose.armFront.shoulderY = -42;
+      pose.armFront.elbowX = -2 + reach * 14;  pose.armFront.elbowY = -56 - reach * 4;
+      pose.armFront.handX  = 22 + reach * 16 + cinch * 0.4; pose.armFront.handY  = -82 - reach * 8 + cinch * 0.6;
+      pose.headOffset.x = -28; pose.headOffset.y = -42;
+    } else if (subKind === 'kimura') {
+      // KIMURA: attacker on side controlling opponent's wrist with one hand
+      // and the elbow with the other (figure-four). Body twisted on its
+      // side — torso rolled hard toward the trapped shoulder.
+      pose.pelvis.x = 0; pose.pelvis.y = -32;
+      pose.torsoAngle = 0.95 + reach * 0.05;     // rolled onto side
+      pose.legL.hipX = -10; pose.legL.kneeX = -10; pose.legL.kneeY = -70; pose.legL.footX = 8; pose.legL.footY = -88;
+      pose.legR.hipX =  10; pose.legR.kneeX =  16; pose.legR.kneeY = -52; pose.legR.footX = 30; pose.legR.footY = -50;
+      // Figure-four grip: both hands cinched on opponent's wrist with one
+      // hand wrapping over the attacker's other forearm.
+      pose.armBack.shoulderX = -14; pose.armBack.shoulderY = -80;
+      pose.armBack.elbowX = 24 + reach * 12; pose.armBack.elbowY = -98 - reach * 4;
+      pose.armBack.handX  = 50 + reach * 14 + cinch * 0.4; pose.armBack.handY  = -86 - reach * 6 - cinch * 0.4;
+      pose.armFront.shoulderX = 20; pose.armFront.shoulderY = -80;
+      pose.armFront.elbowX = 30 + reach * 12; pose.armFront.elbowY = -86 - reach * 4;
+      pose.armFront.handX  = 56 + reach * 14 + cinch * 0.4; pose.armFront.handY  = -82 - reach * 6 - cinch * 0.4;
+      pose.headOffset.x = 8; pose.headOffset.y = -118;
+    } else if (subKind === 'rear_naked') {
+      // REAR-NAKED CHOKE: attacker BEHIND opponent with both hooks in.
+      // One arm wraps deep around the throat (bicep slicing the neck); the
+      // other hand cups the back of the head pushing forward.
+      pose.pelvis.x = -6; pose.pelvis.y = -42;
+      pose.torsoAngle = 0.12;
+      // Hooks: legs wrap around opponent's hips from behind.
+      pose.legL.hipX = -12; pose.legL.hipY = -36; pose.legL.kneeX =  12; pose.legL.kneeY = -42; pose.legL.footX = 38; pose.legL.footY = -22;
+      pose.legR.hipX =  12; pose.legR.hipY = -38; pose.legR.kneeX =  32; pose.legR.kneeY = -38; pose.legR.footX = 50; pose.legR.footY = -14;
+      // Choking arm: bicep across throat, hand grips opposite bicep.
+      pose.armBack.shoulderX = -16; pose.armBack.shoulderY = -100;
+      pose.armBack.elbowX = 24 + reach * 18; pose.armBack.elbowY = -110;
+      pose.armBack.handX  = 56 + reach * 18 - cinch * 0.5; pose.armBack.handY  = -94 + cinch * 0.3;
+      // Top hand: pushes the back of opponent's head forward into the
+      // choke. Wraps high above the choking elbow.
+      pose.armFront.shoulderX = 14; pose.armFront.shoulderY = -100;
+      pose.armFront.elbowX = 30 + reach * 14; pose.armFront.elbowY = -120;
+      pose.armFront.handX  = 50 + reach * 14 - cinch * 0.4; pose.armFront.handY  = -132 + cinch * 0.4;
+      pose.headOffset.x = -10; pose.headOffset.y = -130;
+    } else if (subKind === 'guillotine') {
+      // GUILLOTINE: attacker is upright/seated, opponent's head pulled
+      // DOWN under attacker's armpit. One arm wraps the neck, other hand
+      // grips that wrist and pulls UP. Knees come up high to lock
+      // opponent's body in (closed guard) — torso curls forward HARD as
+      // the choke is finished.
+      pose.pelvis.x = 0; pose.pelvis.y = -56;
+      pose.torsoAngle = 0.55 - reach * 0.10;     // curls forward into the choke
+      // Closed guard around opponent's torso — legs wrap.
+      pose.legL.hipX = -10; pose.legL.hipY = -50; pose.legL.kneeX = 18; pose.legL.kneeY = -70; pose.legL.footX = 50; pose.legL.footY = -52;
+      pose.legR.hipX =  10; pose.legR.hipY = -50; pose.legR.kneeX = 24; pose.legR.kneeY = -64; pose.legR.footX = 56; pose.legR.footY = -46;
+      // Guillotine arms: front arm crooks the neck, back hand grips wrist.
+      pose.armFront.shoulderX = 22; pose.armFront.shoulderY = -110;
+      pose.armFront.elbowX = 38 + reach * 12; pose.armFront.elbowY = -98;
+      pose.armFront.handX  = 18 + reach * 12 - cinch * 0.5; pose.armFront.handY  = -78 - cinch * 0.4;
+      pose.armBack.shoulderX = -18; pose.armBack.shoulderY = -110;
+      pose.armBack.elbowX = 6 + reach * 10; pose.armBack.elbowY = -100;
+      pose.armBack.handX  = 22 + reach * 12 - cinch * 0.5; pose.armBack.handY  = -84 - cinch * 0.4;
+      pose.headOffset.x = 4; pose.headOffset.y = -136;
     } else {
-      // Triangle and others — default tight wrap with pull pulse.
-      const pulse = lockTotal === 0 ? Math.sin((f.animTime || 0) * 0.25) * 1.5 : 0;
-      pose.armBack.shoulderX = -16 * bd; pose.armBack.shoulderY = -96;
-      pose.armBack.elbowX = 10; pose.armBack.elbowY = -128 + pulse;
-      pose.armBack.handX = 28 + reach * 14; pose.armBack.handY = -128 - reach * 10;
-      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -96;
-      pose.armFront.elbowX = 24; pose.armFront.elbowY = -124 + pulse;
-      pose.armFront.handX = 32 + reach * 14; pose.armFront.handY = -126 - reach * 10;
+      // TRIANGLE (and any other): figure-four with the LEGS around
+      // opponent's neck and arm. Attacker on back, hips up, one leg
+      // crossed over its own ankle locking the choke. Torso lies FLAT
+      // on the canvas as legs scissor up.
+      pose.pelvis.x = 0; pose.pelvis.y = -22;
+      pose.torsoAngle = -1.35;                   // ~ -77° — flat on back
+      // Triangle leg lock — one leg up & across, ankle tucked behind
+      // the other knee.
+      pose.legL.hipX = -10; pose.legL.hipY = -22; pose.legL.kneeX =  10; pose.legL.kneeY = -84; pose.legL.footX = 38; pose.legL.footY = -78;
+      pose.legR.hipX =  10; pose.legR.hipY = -22; pose.legR.kneeX = -14 + reach * 14; pose.legR.kneeY = -88; pose.legR.footX = 18 + reach * 12; pose.legR.footY = -66;
+      // One hand grips the trapped arm and pulls down, other braces.
+      pose.armBack.shoulderX = -28; pose.armBack.shoulderY = -38;
+      pose.armBack.elbowX = 4 + reach * 12; pose.armBack.elbowY = -56;
+      pose.armBack.handX  = 30 + reach * 14 + cinch * 0.4; pose.armBack.handY  = -78 + cinch * 0.4;
+      pose.armFront.shoulderX = -24; pose.armFront.shoulderY = -42;
+      pose.armFront.elbowX = -8; pose.armFront.elbowY = -56;
+      pose.armFront.handX  = -30; pose.armFront.handY  = -52;
+      pose.headOffset.x = -28; pose.headOffset.y = -42;
     }
-    pose.headOffset.x = 6; pose.headOffset.y = -130;
   }
   if (f.state === 'sub_defense') {
-    // Position-aware sub defense: same layout family as ground_bottom but with
-    // visible struggle (limbs flailing as the defender taps).
-    const pos = f.groundPosition || 'mount';
-    const flail = Math.sin(t * 0.4) * 6;
+    // Submission-specific defense pose. The DEFENDER's body shape must match
+    // the submission being applied so the viewer instantly understands what's
+    // happening (arm extended = armbar, head pulled down = guillotine, etc).
+    // Falls back to position-aware generic defense when no lock is active.
+    const subKind = f.subLockKind;
+    const flail = Math.sin(t * 0.42) * 6;
+    const tap   = Math.sin(t * 0.7)  * 3;     // rapid tapping motion
     pose.pelvis.x = 0; pose.pelvis.y = -14;
     pose.torsoAngle = 0.06;
-    if (pos === 'guard') {
-      // Defending a triangle/armbar from guard — legs still up locking the attacker.
-      pose.headOffset.x = -64; pose.headOffset.y = -18;
-      pose.legL.hipX = 6;  pose.legL.kneeX = 22 + flail * 0.4; pose.legL.kneeY = -56; pose.legL.footX = 50; pose.legL.footY = -68;
-      pose.legR.hipX = 6;  pose.legR.kneeX = 24 - flail * 0.4; pose.legR.kneeY = -52; pose.legR.footX = 54; pose.legR.footY = -64;
-      pose.armBack.shoulderX = -42;  pose.armBack.elbowX = -32 - flail; pose.armBack.elbowY = -40; pose.armBack.handX = -10 + flail; pose.armBack.handY = -50;
-      pose.armFront.shoulderX = -38; pose.armFront.elbowX = -22 + flail; pose.armFront.elbowY = -46; pose.armFront.handX = 4 - flail; pose.armFront.handY = -54;
-    } else if (pos === 'back_mount') {
-      // RNC defense: face-down, frantically pulling at the choking arm.
-      pose.pelvis.y = -8;
-      pose.headOffset.x = -78; pose.headOffset.y = -10;
-      pose.legL.hipX = 8; pose.legL.kneeX = 38; pose.legL.kneeY = -8; pose.legL.footX = 70; pose.legL.footY = -6;
-      pose.legR.hipX = 8; pose.legR.kneeX = 40; pose.legR.kneeY = -6; pose.legR.footX = 72; pose.legR.footY = -4;
-      pose.armBack.shoulderX = -50;  pose.armBack.elbowX = -64 + flail * 0.6; pose.armBack.elbowY = -22; pose.armBack.handX = -54 + flail; pose.armBack.handY = -34;
-      pose.armFront.shoulderX = -46; pose.armFront.elbowX = -58 - flail * 0.6; pose.armFront.elbowY = -28; pose.armFront.handX = -50 - flail; pose.armFront.handY = -38;
+
+    if (subKind === 'armbar') {
+      // ARMBAR defense: defender flat on back, trapped arm YANKED straight
+      // toward attacker (hyper-extended look). Free hand claws desperately.
+      pose.pelvis.y = -14;
+      pose.torsoAngle = 0.02;
+      pose.headOffset.x = -80; pose.headOffset.y = -14;
+      pose.legL.hipX = 6;  pose.legL.kneeX = 34 + tap * 0.4; pose.legL.kneeY = -10; pose.legL.footX = 68; pose.legL.footY = -2;
+      pose.legR.hipX = 6;  pose.legR.kneeX = 38 - tap * 0.4; pose.legR.kneeY = -6;  pose.legR.footX = 72; pose.legR.footY =  0;
+      // TRAPPED arm (front): yanked rigidly STRAIGHT away from body
+      pose.armFront.shoulderX = -18; pose.armFront.shoulderY = -62;
+      pose.armFront.elbowX = 20; pose.armFront.elbowY = -68;
+      pose.armFront.handX  = 58; pose.armFront.handY  = -70;
+      // FREE arm (back): claws / slaps ground in panic
+      pose.armBack.shoulderX = -40; pose.armBack.shoulderY = -60;
+      pose.armBack.elbowX = -54 + flail; pose.armBack.elbowY = -42;
+      pose.armBack.handX  = -66 - flail * 0.6; pose.armBack.handY  = -28 + tap;
+    } else if (subKind === 'kimura') {
+      // KIMURA defense: defender on side, shoulder wrenched up, trapped arm
+      // bent painfully behind the back.
+      pose.pelvis.y = -18;
+      pose.torsoAngle = 0.35;
+      pose.headOffset.x = -66; pose.headOffset.y = -28;
+      pose.legL.hipX = 8;  pose.legL.kneeX = 30 + tap * 0.3; pose.legL.kneeY = -14; pose.legL.footX = 62; pose.legL.footY = -6;
+      pose.legR.hipX = 10; pose.legR.kneeX = 34 - tap * 0.3; pose.legR.kneeY = -18; pose.legR.footX = 66; pose.legR.footY = -4;
+      // Trapped arm bent behind the back (front arm)
+      pose.armFront.shoulderX = -16; pose.armFront.shoulderY = -58;
+      pose.armFront.elbowX = 14; pose.armFront.elbowY = -38;
+      pose.armFront.handX  = 0;  pose.armFront.handY  = -22;  // wrist bent back
+      // Free arm (back) tries to push attacker off
+      pose.armBack.shoulderX = -44; pose.armBack.shoulderY = -62;
+      pose.armBack.elbowX = -22 + flail; pose.armBack.elbowY = -72;
+      pose.armBack.handX  = -2 - flail * 0.6; pose.armBack.handY  = -78 + tap;
+    } else if (subKind === 'rear_naked') {
+      // RNC defense: face-down, head pulled UP as the choking arm crushes the
+      // throat. Both hands claw at the choking forearm.
+      pose.pelvis.y = -10;
+      pose.torsoAngle = -0.10;
+      pose.headOffset.x = -72; pose.headOffset.y = -22 + tap * 0.5;
+      pose.legL.hipX = 6; pose.legL.kneeX = 34; pose.legL.kneeY = -8; pose.legL.footX = 66; pose.legL.footY = -4;
+      pose.legR.hipX = 8; pose.legR.kneeX = 38; pose.legR.kneeY = -4; pose.legR.footX = 70; pose.legR.footY = -2;
+      // Both hands claw at attacker's choking forearm (up near neck)
+      pose.armBack.shoulderX = -44;  pose.armBack.elbowX = -62 + flail * 0.6; pose.armBack.elbowY = -40;
+      pose.armBack.handX  = -74 + flail * 0.8; pose.armBack.handY  = -28 + tap;
+      pose.armFront.shoulderX = -40; pose.armFront.elbowX = -58 - flail * 0.6; pose.armFront.elbowY = -44;
+      pose.armFront.handX  = -72 - flail * 0.8; pose.armFront.handY  = -20 - tap;
+    } else if (subKind === 'guillotine') {
+      // GUILLOTINE defense: head YANKED down under attacker's armpit, torso
+      // curled forward. Hands try to peel the choking arm off.
+      pose.pelvis.y = -40;                        // kneeling / on all fours
+      pose.torsoAngle = -0.65;                    // torso curled forward
+      pose.headOffset.x = -28; pose.headOffset.y = -8 + tap;
+      pose.legL.hipX = 0;  pose.legL.hipY = -36; pose.legL.kneeX = -6; pose.legL.kneeY = -14; pose.legL.footX = -2; pose.legL.footY = 0;
+      pose.legR.hipX = 6;  pose.legR.hipY = -36; pose.legR.kneeX = 12; pose.legR.kneeY = -12; pose.legR.footX = 14; pose.legR.footY = 0;
+      // Both hands claw up at the choking arm (which is overhead from defender's view)
+      pose.armBack.shoulderX = -10;  pose.armBack.shoulderY = -64;
+      pose.armBack.elbowX = 8 + flail * 0.4;  pose.armBack.elbowY = -44;
+      pose.armBack.handX  = 22 + flail * 0.5; pose.armBack.handY  = -24 - tap;
+      pose.armFront.shoulderX = 10; pose.armFront.shoulderY = -66;
+      pose.armFront.elbowX = 26 - flail * 0.4; pose.armFront.elbowY = -48;
+      pose.armFront.handX  = 40 - flail * 0.5; pose.armFront.handY  = -32 - tap;
+    } else if (subKind === 'triangle') {
+      // TRIANGLE defense: defender kneeling with head trapped between attacker's
+      // legs — chin tucked, face reddening, one arm trapped, other hand peels
+      // at the squeezing leg.
+      pose.pelvis.y = -42;
+      pose.torsoAngle = -0.55;
+      pose.headOffset.x = -16; pose.headOffset.y = -12 + tap;
+      pose.legL.hipX = -2; pose.legL.hipY = -38; pose.legL.kneeX = -10; pose.legL.kneeY = -16; pose.legL.footX = -8; pose.legL.footY = 0;
+      pose.legR.hipX =  6; pose.legR.hipY = -38; pose.legR.kneeX =  14; pose.legR.kneeY = -14; pose.legR.footX = 18; pose.legR.footY = 0;
+      // Trapped arm (front): stuck in the triangle, extended forward
+      pose.armFront.shoulderX = 6; pose.armFront.shoulderY = -64;
+      pose.armFront.elbowX = 30; pose.armFront.elbowY = -56;
+      pose.armFront.handX  = 52 + tap; pose.armFront.handY  = -52;
+      // Free arm (back): tries to pull the squeezing leg off
+      pose.armBack.shoulderX = -12;  pose.armBack.shoulderY = -64;
+      pose.armBack.elbowX = 6 + flail * 0.4;  pose.armBack.elbowY = -46;
+      pose.armBack.handX  = 28 + flail * 0.6; pose.armBack.handY  = -24 - tap;
     } else {
-      // mount / side_control: flat on back, hands frantically defending.
-      pose.headOffset.x = -76; pose.headOffset.y = -16;
-      pose.legL.hipX = 8; pose.legL.kneeX = 36; pose.legL.kneeY = -10 + flail * 0.5; pose.legL.footX = 70; pose.legL.footY = -4;
-      pose.legR.hipX = 8; pose.legR.kneeX = 38; pose.legR.kneeY = -6 - flail * 0.5; pose.legR.footX = 72; pose.legR.footY = -2;
-      pose.armBack.shoulderX = -46;  pose.armBack.elbowX = -34 + flail; pose.armBack.elbowY = -36; pose.armBack.handX = -22 - flail; pose.armBack.handY = -42;
-      pose.armFront.shoulderX = -42; pose.armFront.elbowX = -28 - flail; pose.armFront.elbowY = -42; pose.armFront.handX = -16 + flail; pose.armFront.handY = -48;
+      // Generic position-based defense (no specific lock info).
+      const pos = f.groundPosition || 'mount';
+      if (pos === 'guard') {
+        pose.headOffset.x = -64; pose.headOffset.y = -18;
+        pose.legL.hipX = 6;  pose.legL.kneeX = 22 + flail * 0.4; pose.legL.kneeY = -56; pose.legL.footX = 50; pose.legL.footY = -68;
+        pose.legR.hipX = 6;  pose.legR.kneeX = 24 - flail * 0.4; pose.legR.kneeY = -52; pose.legR.footX = 54; pose.legR.footY = -64;
+        pose.armBack.shoulderX = -42;  pose.armBack.elbowX = -32 - flail; pose.armBack.elbowY = -40; pose.armBack.handX = -10 + flail; pose.armBack.handY = -50;
+        pose.armFront.shoulderX = -38; pose.armFront.elbowX = -22 + flail; pose.armFront.elbowY = -46; pose.armFront.handX = 4 - flail; pose.armFront.handY = -54;
+      } else if (pos === 'back_mount') {
+        pose.pelvis.y = -8;
+        pose.headOffset.x = -78; pose.headOffset.y = -10;
+        pose.legL.hipX = 8; pose.legL.kneeX = 38; pose.legL.kneeY = -8; pose.legL.footX = 70; pose.legL.footY = -6;
+        pose.legR.hipX = 8; pose.legR.kneeX = 40; pose.legR.kneeY = -6; pose.legR.footX = 72; pose.legR.footY = -4;
+        pose.armBack.shoulderX = -50;  pose.armBack.elbowX = -64 + flail * 0.6; pose.armBack.elbowY = -22; pose.armBack.handX = -54 + flail; pose.armBack.handY = -34;
+        pose.armFront.shoulderX = -46; pose.armFront.elbowX = -58 - flail * 0.6; pose.armFront.elbowY = -28; pose.armFront.handX = -50 - flail; pose.armFront.handY = -38;
+      } else {
+        pose.headOffset.x = -76; pose.headOffset.y = -16;
+        pose.legL.hipX = 8; pose.legL.kneeX = 36; pose.legL.kneeY = -10 + flail * 0.5; pose.legL.footX = 70; pose.legL.footY = -4;
+        pose.legR.hipX = 8; pose.legR.kneeX = 38; pose.legR.kneeY = -6 - flail * 0.5; pose.legR.footX = 72; pose.legR.footY = -2;
+        pose.armBack.shoulderX = -46;  pose.armBack.elbowX = -34 + flail; pose.armBack.elbowY = -36; pose.armBack.handX = -22 - flail; pose.armBack.handY = -42;
+        pose.armFront.shoulderX = -42; pose.armFront.elbowX = -28 - flail; pose.armFront.elbowY = -42; pose.armFront.handX = -16 + flail; pose.armFront.handY = -48;
+      }
     }
   }
   if (f.state === 'attack' && a) {
@@ -1014,97 +1272,171 @@ function applyAttackPose(pose, kind, k, phase, f) {
   // `k` already represents 0..1..0 progression across the whole move. Use easing for snap.
   const easeOut = 1 - (1 - k) * (1 - k);   // fast-out for snap on extension
   const easeIn = k * k;                     // accelerating for chamber
+  const bd = (f && f.data && f.data.build) || 1.0;
+  const ht = (f && f.data && f.data.height) || 1.0;
+  void ht;
   switch (kind) {
     case 'jab': {
-      // lead hand extends forward with a snap, rear hand pulls back as guard
-      const reach = easeOut;
-      pose.armFront.elbowX = 16 + reach * 34;
-      pose.armFront.elbowY = -132 - reach * 2;
-      pose.armFront.handX = 24 + reach * 60;
-      pose.armFront.handY = -134 - reach * 2;
-      pose.armBack.handX = -4; pose.armBack.handY = -144;
-      pose.armBack.elbowX = -10; pose.armBack.elbowY = -130;
-      pose.torsoAngle = 0.05 * reach;      // slight lean into jab
-      pose.pelvis.x = reach * 3;
+      // Lead-hand jab: snap-extend front fist, rear hand glued to chin guarding
+      // the face, small hip drive forward, lead foot stamps. Recovery has the
+      // arm pulling back along the same line (no overshoot — jabs snap back
+      // to guard fastest of all strikes).
+      const reach = phase === 'recovery' ? k * k : easeOut; // sharp snap, soft return
+      const overshoot = phase === 'active' ? Math.sin(k * Math.PI) * 0.08 : 0;
+      const r = reach + overshoot;
+      pose.armFront.elbowX = 18 + r * 38;
+      pose.armFront.elbowY = -132 - r * 4;
+      pose.armFront.handX = 26 + r * 78;
+      pose.armFront.handY = -134 - r * 4;
+      // Rear hand stays glued to chin in proper boxing form.
+      pose.armBack.handX = 6; pose.armBack.handY = -148;
+      pose.armBack.elbowX = -10; pose.armBack.elbowY = -126;
+      pose.torsoAngle = 0.12 * reach;
+      pose.pelvis.x = reach * 4;
+      pose.legR.footX = 28 * 0.86 + reach * 10;  // lead foot stamps forward
+      pose.legL.footY = -reach * 3;              // back foot rises on toe
+      pose.headOffset.x = -2 + reach * 4;
+      pose.headOffset.y = -152 - reach * 2;     // slight head tuck behind shoulder
       break;
     }
     case 'cross': {
-      // rear hand drives forward with full hip + shoulder rotation, lead hand protects chin
-      const reach = easeOut;
-      pose.armBack.elbowX = -6 + reach * 28;
-      pose.armBack.elbowY = -134 - reach * 2;
-      pose.armBack.handX = -2 + reach * 86;
-      pose.armBack.handY = -134 - reach * 2;
-      pose.armFront.handX = 14; pose.armFront.handY = -148;
-      pose.armFront.elbowX = 14; pose.armFront.elbowY = -135;
-      pose.torsoAngle = -0.24 * reach;      // body rotates behind the punch
-      pose.pelvis.x = reach * 5;            // hip drive forward
-      pose.headOffset.x = -2 + reach * 6;
-      // Back foot pivots (toe up)
-      pose.legL.footY -= reach * 4;
+      // Rear-hand cross: HUGE hip + shoulder rotation. Rear foot pivots on the
+      // toe (heel rotates upward), lead hand glued to chin, the whole body
+      // rotates BEHIND the punch. Has slight follow-through at peak (the
+      // rear shoulder continues past the strike line) then a heavy recovery
+      // back to guard.
+      const overshoot = phase === 'active' ? Math.sin(k * Math.PI) * 0.12 : 0;
+      const reach = easeOut + overshoot;
+      pose.armBack.elbowX = -2 + reach * 38;
+      pose.armBack.elbowY = -134 - reach * 4;
+      pose.armBack.handX = 0 + reach * 104;
+      pose.armBack.handY = -134 - reach * 6;
+      // Lead hand pulls back to chin to guard.
+      pose.armFront.handX = 14 - reach * 4; pose.armFront.handY = -148 - reach * 2;
+      pose.armFront.elbowX = 14; pose.armFront.elbowY = -132;
+      pose.torsoAngle = -0.42 * reach;
+      pose.pelvis.x = reach * 8;
+      pose.headOffset.x = -2 + reach * 10;
+      pose.headOffset.y = -152 + reach * 2;
+      // Rear foot pivots: heel rotates up, knee twists IN toward target line.
+      pose.legL.footY -= reach * 14;
+      pose.legL.footX = -20 * bd + reach * 8;
+      pose.legL.kneeX = -14 * bd + reach * 8;
+      pose.legL.kneeY = -42 - reach * 6;
+      // Lead leg straightens & plants firmly to absorb rotation.
+      pose.legR.footX = 24 * bd + reach * 6;
+      pose.legR.kneeY = -42 + reach * 2;
       break;
     }
     case 'uppercut': {
-      // dip + rise: chamber drops body, extension rises with back hand arcing up
-      const dip = phase === 'startup' ? easeIn : 1 - easeOut;
+      // Uppercut = explosive level change. Dip DEEPLY during chamber (knees
+      // bend, hips drop, rear fist drops to hip), then explode upward with
+      // the rear fist arcing from hip → chin → above-head. Body rotates &
+      // rises violently on extension. Recovery: body settles, fist drops
+      // back to guard.
+      const dip = phase === 'startup' ? easeIn : (phase === 'active' ? 1 : 1 - easeOut);
       const rise = phase === 'startup' ? 0 : easeOut;
-      pose.pelvis.y = -82 + dip * 4 - rise * 10;
-      pose.torsoAngle = -0.12 * rise;
-      pose.armBack.elbowX = 4 + rise * 16;
-      pose.armBack.elbowY = -120 - rise * 18;
-      pose.armBack.handX = 6 + rise * 30;
-      pose.armBack.handY = -116 - rise * 44;
-      pose.armFront.handX = 16; pose.armFront.handY = -146;
+      pose.pelvis.y = -82 + dip * 12 - rise * 22;
+      pose.torsoAngle = -0.20 * rise + 0.14 * dip;
+      // Knees bend deeply during the dip, then drive up
+      pose.legR.kneeY = -42 + dip * 16 - rise * 6;
+      pose.legL.kneeY = -42 + dip * 16 - rise * 6;
+      // Rear fist: starts at hip, arcs up through chin to above shoulder.
+      pose.armBack.elbowX = -4 + rise * 24;
+      pose.armBack.elbowY = -100 + dip * 14 - rise * 38;
+      pose.armBack.handX = 4 + rise * 48;
+      pose.armBack.handY = -88 + dip * 18 - rise * 78;
+      // Lead hand stays at chin guarding
+      pose.armFront.handX = 16; pose.armFront.handY = -150;
+      pose.armFront.elbowX = 14; pose.armFront.elbowY = -132;
+      // Head rises with body, tilts back as the fist drives up past chin
+      pose.headOffset.y = -152 * ht + dip * 4 - rise * 12;
+      pose.headOffset.x = -2 + rise * 4;
       break;
     }
     case 'kick': {
-      // Round kick (mid/body): chamber knee up, extend leg horizontally, retract.
+      // Round body kick: chamber the knee high & tucked, then PIVOT on the
+      // support leg and whip the kicking leg horizontally through the target.
+      // Body leans hard away from the kick to balance.
       const chamber = phase === 'startup' ? easeIn : 1 - easeOut;
       const extend = phase === 'startup' ? 0 : easeOut;
-      // Knee raises during chamber, leg whips out during extend.
-      const kneeX = 20 + chamber * 10;
-      const kneeY = -70 + chamber * -34 + extend * 20;
-      const footX = 20 + chamber * 18 + extend * 70;
-      const footY = -70 + chamber * -40 + extend * 30;
-      pose.legR.kneeX = kneeX; pose.legR.kneeY = kneeY;
-      pose.legR.footX = footX; pose.legR.footY = footY;
-      pose.torsoAngle = -0.22 * extend;
-      pose.armBack.handX = -18 + extend * 4;
-      pose.armBack.handY = -150;
-      pose.armFront.handX = 8 - extend * 6;
-      pose.armFront.handY = -132 + extend * 6;
-      pose.pelvis.x = -extend * 4;
+      // Kicking leg (right): chambers high & tucked, then snaps out.
+      pose.legR.kneeX = 16 + chamber * 16 - extend * 10;
+      pose.legR.kneeY = -56 - chamber * 36 + extend * 18;
+      pose.legR.footX = 18 + chamber * 26 + extend * 80;
+      pose.legR.footY = -60 - chamber * 56 + extend * 28;
+      // Support leg (left) PIVOTS — knee straightens, foot turns out.
+      pose.legL.kneeX = -10;
+      pose.legL.kneeY = -38 + extend * 4;
+      pose.legL.footX = -18 + extend * 4;
+      pose.legL.footY = 0;
+      // Hip + shoulder rotation: chamber pre-loads, extension unwinds violently.
+      pose.torsoAngle = -0.36 * extend + 0.12 * chamber;
+      pose.pelvis.x = -extend * 8;
+      pose.pelvis.y = -82 + chamber * 4;
+      // Arms windmill for balance — front arm pulls back, back arm reaches forward.
+      pose.armBack.handX = -22 - extend * 8;
+      pose.armBack.handY = -150 + extend * 12;
+      pose.armBack.elbowX = -16; pose.armBack.elbowY = -136;
+      pose.armFront.handX = 10 - extend * 14;
+      pose.armFront.handY = -130 + extend * 12;
+      pose.armFront.elbowX = 12; pose.armFront.elbowY = -128;
+      // Head leans away to balance the kick
+      pose.headOffset.x = -4 - extend * 6;
       break;
     }
     case 'low_kick': {
-      // Low kick — knee stays low, whips across at shin height
+      // Low kick — chops the lead leg / calf with a downward arc. Step in
+      // slightly with the support leg, hip rotates, body leans into the kick.
       const chamber = phase === 'startup' ? easeIn : 1 - easeOut;
       const extend = phase === 'startup' ? 0 : easeOut;
-      pose.legR.kneeX = 16 + chamber * 10;
-      pose.legR.kneeY = -32 - chamber * 10;
-      pose.legR.footX = 16 + chamber * 20 + extend * 60;
-      pose.legR.footY = -26 + chamber * -6 + extend * 4;
-      pose.torsoAngle = -0.12 * extend;
-      pose.armFront.handX = 12 - extend * 2; pose.armFront.handY = -130;
-      pose.armBack.handX = -14; pose.armBack.handY = -144;
+      pose.legR.kneeX = 18 + chamber * 14;
+      pose.legR.kneeY = -36 - chamber * 16 + extend * 4;
+      pose.legR.footX = 18 + chamber * 26 + extend * 78;
+      pose.legR.footY = -22 - chamber * 8 + extend * 8;
+      // Support leg compresses to drive the rotation.
+      pose.legL.kneeY = -42 + extend * 6;
+      pose.legL.footX = -18 - extend * 4;
+      // Body rotates with the kick.
+      pose.torsoAngle = -0.22 * extend + 0.06 * chamber;
+      pose.pelvis.x = -extend * 5;
+      // Front hand pulls in to chin, rear hand drops for counter-balance.
+      pose.armFront.handX = 10 - extend * 4; pose.armFront.handY = -132;
+      pose.armFront.elbowX = 14; pose.armFront.elbowY = -130;
+      pose.armBack.handX = -16 - extend * 6; pose.armBack.handY = -146 + extend * 4;
+      pose.armBack.elbowX = -14; pose.armBack.elbowY = -132;
+      pose.headOffset.x = -2 - extend * 3;
       break;
     }
     case 'head_kick': {
-      // High head kick — deep chamber, whip upward, land at head height
+      // High head kick — deepest chamber, snap leg up to head height, body
+      // leans back massively to fit the leg's arc, support leg pivots fully.
       const chamber = phase === 'startup' ? easeIn : 1 - easeOut;
       const extend = phase === 'startup' ? 0 : easeOut;
-      pose.legR.kneeX = 14 + chamber * 16;
-      pose.legR.kneeY = -90 + chamber * -30 + extend * 20;
-      pose.legR.footX = 14 + chamber * 22 + extend * 70;
-      pose.legR.footY = -90 + chamber * -50 + extend * -14;
-      pose.torsoAngle = -0.34 * extend;
-      pose.pelvis.y = -82 + extend * 8;
-      pose.armBack.handX = -24; pose.armBack.handY = -130;
-      pose.armFront.handX = 12; pose.armFront.handY = -120;
-      pose.headOffset.x = -2 - extend * 4;
-      // Support leg bends
-      pose.legL.kneeY = -36;
-      pose.legL.footX = -14;
+      // Knee chambers near the chest, then whips up and out at head height.
+      pose.legR.kneeX = 12 + chamber * 22;
+      pose.legR.kneeY = -100 - chamber * 40 + extend * 14;
+      pose.legR.footX = 12 + chamber * 28 + extend * 86;
+      pose.legR.footY = -110 - chamber * 60 - extend * 8;
+      // Support leg straightens, pivots so the toe points away from target.
+      pose.legL.kneeX = -8;
+      pose.legL.kneeY = -36 + extend * 2;
+      pose.legL.footX = -16;
+      pose.legL.footY = 0;
+      // Body leans back hard, hips rotate aggressively.
+      pose.torsoAngle = -0.46 * extend + 0.10 * chamber;
+      pose.pelvis.x = -extend * 8;
+      pose.pelvis.y = -82 + chamber * 6 + extend * 6;
+      // Arms drop & windmill for balance.
+      pose.armBack.handX = -28 - extend * 4;
+      pose.armBack.handY = -126 + extend * 18;
+      pose.armBack.elbowX = -18; pose.armBack.elbowY = -114;
+      pose.armFront.handX = 14 - extend * 10;
+      pose.armFront.handY = -118 + extend * 14;
+      pose.armFront.elbowX = 16; pose.armFront.elbowY = -112;
+      // Head tilts away to clear the kick.
+      pose.headOffset.x = -2 - extend * 8;
+      pose.headOffset.y = -152 * ht - extend * 4;
       break;
     }
     case 'special': {
@@ -1143,118 +1475,66 @@ function applyAttackPose(pose, kind, k, phase, f) {
 }
 
 function drawLeg(ctx, leg, p, bd) {
-  const skin = p.skin;
-  const shadow = shadeColor(skin, -0.22);
-  const hilite = shadeColor(skin, 0.18);
+  // Pure silhouette leg — solid black thigh + shin + foot. No skin shading,
+  // no ankle tape (would break the silhouette aesthetic).
+  const body = p.body || p.skin || '#070707';
 
   ctx.save();
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = body;
 
-  // THIGH (quadriceps) — wider, with shadow side for definition
-  ctx.strokeStyle = skin;
+  // THIGH
   ctx.lineWidth = 22 * bd;
   ctx.beginPath();
   ctx.moveTo(leg.hipX, leg.hipY);
   ctx.lineTo(leg.kneeX, leg.kneeY);
   ctx.stroke();
-  // inner shadow stroke (slightly offset)
-  ctx.strokeStyle = shadow;
-  ctx.lineWidth = 8 * bd;
-  ctx.beginPath();
-  ctx.moveTo(leg.hipX - 4, leg.hipY + 2);
-  ctx.lineTo(leg.kneeX - 3, leg.kneeY - 2);
-  ctx.stroke();
-  // highlight stroke
-  ctx.strokeStyle = hilite;
-  ctx.lineWidth = 4 * bd;
-  ctx.beginPath();
-  ctx.moveTo(leg.hipX + 5, leg.hipY + 2);
-  ctx.lineTo(leg.kneeX + 4, leg.kneeY - 4);
-  ctx.stroke();
 
-  // KNEE (slightly larger joint cap)
-  ctx.fillStyle = shadeColor(skin, -0.08);
-  ctx.beginPath();
-  ctx.arc(leg.kneeX, leg.kneeY, 9 * bd, 0, Math.PI * 2);
-  ctx.fill();
-
-  // SHIN (calf) — tapered
-  ctx.strokeStyle = skin;
+  // SHIN — slightly tapered
   ctx.lineWidth = 16 * bd;
   ctx.beginPath();
   ctx.moveTo(leg.kneeX, leg.kneeY);
   ctx.lineTo(leg.footX, leg.footY);
   ctx.stroke();
-  // calf muscle highlight
-  ctx.strokeStyle = hilite;
-  ctx.lineWidth = 4 * bd;
-  ctx.beginPath();
-  ctx.moveTo(leg.kneeX + 4, leg.kneeY + 6);
-  ctx.lineTo(leg.footX + 3, leg.footY - 6);
-  ctx.stroke();
-  // shadow on back of calf
-  ctx.strokeStyle = shadow;
-  ctx.lineWidth = 3 * bd;
-  ctx.beginPath();
-  ctx.moveTo(leg.kneeX - 4, leg.kneeY + 6);
-  ctx.lineTo(leg.footX - 4, leg.footY - 6);
-  ctx.stroke();
 
-  // ANKLE WRAP (athletic tape, white)
-  ctx.strokeStyle = '#ececec';
-  ctx.lineWidth = 4 * bd;
-  ctx.lineCap = 'butt';
-  for (let i = 0; i < 3; i++) {
-    const tY = leg.footY - 4 + i * 3;
-    ctx.beginPath();
-    ctx.moveTo(leg.footX - 8, tY);
-    ctx.lineTo(leg.footX + 8, tY);
-    ctx.stroke();
-  }
+  // KNEE blend (filled circle to soften the joint)
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.arc(leg.kneeX, leg.kneeY, 10 * bd, 0, Math.PI * 2);
+  ctx.fill();
 
-  // FOOT (barefoot, skin-toned)
-  ctx.fillStyle = skin;
+  // FOOT
   ctx.beginPath();
-  ctx.ellipse(leg.footX + 6, leg.footY - 2, 15, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(leg.footX + 5, leg.footY - 1, 14, 5, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = shadow;
-  ctx.beginPath();
-  ctx.ellipse(leg.footX + 6, leg.footY + 1, 15, 2, 0, 0, Math.PI * 2);
-  ctx.fill();
+
   ctx.restore();
 }
 
 function drawTorso(ctx, pose, p, bd, ht, data) {
-  const skin = p.skin;
-  const shadow = shadeColor(skin, -0.20);
-  const deepShadow = shadeColor(skin, -0.34);
-  const hilite = shadeColor(skin, 0.14);
+  // Pure silhouette torso — single solid black body shape, no muscle shading,
+  // no belly bulge, no sports-bra detail. The fighter's identity comes from
+  // hair + signature glove color, not from torso markings.
+  const body = p.body || p.skin || '#070707';
 
-  const muscle = data && typeof data.muscle === 'number' ? data.muscle : 0.75;
-  const belly = data && typeof data.belly === 'number' ? data.belly : 0;
-  const female = data && data.sex === 'f';
-
-  // Base silhouette dimensions (natural proportions, not exaggerated)
-  // Shoulder width scales with build; waist stays narrower but proportionally.
-  const shoulderW = female ? 26 * bd : 30 * bd;
-  const waistW = female ? 22 * bd : 22 * bd;
+  const shoulderW = 30 * bd;
+  const waistW = 22 * bd;
   const neckOffsetY = -72 * ht;
   const shoulderY = -68 * ht;
-  const chestY = -52 * ht;
   const waistY = 0;
 
   ctx.save();
   ctx.translate(pose.pelvis.x, pose.pelvis.y);
   ctx.rotate(pose.torsoAngle);
 
-  // TORSO BASE — softer V-taper with belly bulge if applicable
-  ctx.fillStyle = skin;
+  // Single solid silhouette body shape (V-taper from waist to shoulders).
+  ctx.fillStyle = body;
   ctx.beginPath();
   ctx.moveTo(-waistW, waistY);
-  // left flank
   ctx.bezierCurveTo(
-    -(waistW + belly * 8), -14,
-    -(shoulderW * 0.95 + belly * 4), -34,
+    -waistW, -14,
+    -shoulderW * 0.95, -34,
     -shoulderW, shoulderY
   );
   ctx.lineTo(-shoulderW * 0.7, neckOffsetY);
@@ -1262,12 +1542,74 @@ function drawTorso(ctx, pose, p, bd, ht, data) {
   ctx.lineTo(5, neckOffsetY - 2);
   ctx.lineTo(shoulderW * 0.7, neckOffsetY);
   ctx.lineTo(shoulderW, shoulderY);
-  // right flank
   ctx.bezierCurveTo(
-    shoulderW * 0.95 + belly * 4, -34,
-    waistW + belly * 8, -14,
+    shoulderW * 0.95, -34,
+    waistW, -14,
     waistW, waistY
   );
+  ctx.closePath();
+  ctx.fill();
+
+  // Subtle inner shadow on the back-side half so the torso reads as a 3D
+  // shape rather than a flat colored cutout. Body color is now vibrant —
+  // without this it loses dimensional volume.
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.moveTo(-waistW, waistY);
+  ctx.bezierCurveTo(-waistW, -14, -shoulderW * 0.95, -34, -shoulderW, shoulderY);
+  ctx.lineTo(-shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(-2, neckOffsetY - 2);
+  ctx.lineTo(-2, waistY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Thin dark outline around the whole silhouette so it pops against the
+  // dark background.
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(-waistW, waistY);
+  ctx.bezierCurveTo(-waistW, -14, -shoulderW * 0.95, -34, -shoulderW, shoulderY);
+  ctx.lineTo(-shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(-5, neckOffsetY - 2);
+  ctx.lineTo(5, neckOffsetY - 2);
+  ctx.lineTo(shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(shoulderW, shoulderY);
+  ctx.bezierCurveTo(shoulderW * 0.95, -34, waistW, -14, waistW, waistY);
+  ctx.closePath();
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function _drawTorsoLegacy_unused(ctx, pose, p, bd, ht, data) {
+  // legacy detailed torso (skin/muscle/female chest/etc) — replaced by silhouette.
+  const skin = p.skin;
+  const shadow = shadeColor(skin, -0.20);
+  const deepShadow = shadeColor(skin, -0.34);
+  const hilite = shadeColor(skin, 0.14);
+  const muscle = data && typeof data.muscle === 'number' ? data.muscle : 0.75;
+  const belly = data && typeof data.belly === 'number' ? data.belly : 0;
+  const female = data && data.sex === 'f';
+  const shoulderW = female ? 26 * bd : 30 * bd;
+  const waistW = female ? 22 * bd : 22 * bd;
+  const neckOffsetY = -72 * ht;
+  const shoulderY = -68 * ht;
+  const chestY = -52 * ht;
+  const waistY = 0;
+  ctx.save();
+  ctx.translate(pose.pelvis.x, pose.pelvis.y);
+  ctx.rotate(pose.torsoAngle);
+  ctx.fillStyle = skin;
+  ctx.beginPath();
+  ctx.moveTo(-waistW, waistY);
+  ctx.bezierCurveTo(-(waistW + belly * 8), -14, -(shoulderW * 0.95 + belly * 4), -34, -shoulderW, shoulderY);
+  ctx.lineTo(-shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(-5, neckOffsetY - 2);
+  ctx.lineTo(5, neckOffsetY - 2);
+  ctx.lineTo(shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(shoulderW, shoulderY);
+  ctx.bezierCurveTo(shoulderW * 0.95 + belly * 4, -34, waistW + belly * 8, -14, waistW, waistY);
   ctx.closePath();
   ctx.fill();
 
@@ -1399,146 +1741,101 @@ function drawTorso(ctx, pose, p, bd, ht, data) {
 }
 
 function drawArm(ctx, arm, p, bd, isBack) {
-  const skin = isBack ? shadeColor(p.skin, -0.12) : p.skin;
-  const shadow = shadeColor(skin, -0.22);
-  const hilite = shadeColor(skin, 0.18);
-  const gloveBase = p.gloves;
-  const gloveShadow = shadeColor(gloveBase, -0.28);
-  const gloveHilite = shadeColor(gloveBase, 0.25);
+  // Silhouette arm — solid black upper arm + forearm with a colored glove
+  // (the fighter's signature color) at the hand. Back arm gets a slightly
+  // darker shade so depth is still readable.
+  const body = p.body || p.skin || '#070707';
+  const armColor = isBack ? shadeColor(body, -0.25) : body;
+  const glove = p.gloves || '#ff3a3a';
+  const gloveDark = shadeColor(glove, -0.35);
 
   ctx.save();
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
 
-  // SHOULDER / DELTOID cap
-  ctx.fillStyle = skin;
+  // SHOULDER cap (blends with torso silhouette)
+  ctx.fillStyle = armColor;
   ctx.beginPath();
   ctx.arc(arm.shoulderX, arm.shoulderY, 11 * bd, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = shadow;
-  ctx.beginPath();
-  ctx.arc(arm.shoulderX - 3, arm.shoulderY + 2, 8 * bd, 0, Math.PI * 2);
-  ctx.fill();
 
-  // UPPER ARM (bicep/tricep)
-  ctx.strokeStyle = skin;
+  // UPPER ARM
+  ctx.strokeStyle = armColor;
   ctx.lineWidth = 14 * bd;
   ctx.beginPath();
   ctx.moveTo(arm.shoulderX, arm.shoulderY);
   ctx.lineTo(arm.elbowX, arm.elbowY);
   ctx.stroke();
-  // bicep highlight
-  ctx.strokeStyle = hilite;
-  ctx.lineWidth = 4 * bd;
-  ctx.beginPath();
-  ctx.moveTo(arm.shoulderX + 2, arm.shoulderY + 2);
-  ctx.lineTo(arm.elbowX + 2, arm.elbowY - 2);
-  ctx.stroke();
-  // tricep shadow
-  ctx.strokeStyle = shadow;
-  ctx.lineWidth = 5 * bd;
-  ctx.beginPath();
-  ctx.moveTo(arm.shoulderX - 4, arm.shoulderY + 4);
-  ctx.lineTo(arm.elbowX - 4, arm.elbowY);
-  ctx.stroke();
 
   // ELBOW joint
-  ctx.fillStyle = shadeColor(skin, -0.08);
+  ctx.fillStyle = armColor;
   ctx.beginPath();
   ctx.arc(arm.elbowX, arm.elbowY, 7 * bd, 0, Math.PI * 2);
   ctx.fill();
 
   // FOREARM
-  ctx.strokeStyle = skin;
   ctx.lineWidth = 11 * bd;
   ctx.beginPath();
   ctx.moveTo(arm.elbowX, arm.elbowY);
   ctx.lineTo(arm.handX, arm.handY);
   ctx.stroke();
-  // forearm highlight
-  ctx.strokeStyle = hilite;
-  ctx.lineWidth = 3 * bd;
-  ctx.beginPath();
-  ctx.moveTo(arm.elbowX + 2, arm.elbowY + 2);
-  ctx.lineTo(arm.handX + 2, arm.handY - 1);
-  ctx.stroke();
 
-  // WRIST WRAP (white tape)
+  // GLOVE — fighter's signature color, simple oval boxing-glove shape
   const wristAngle = Math.atan2(arm.handY - arm.elbowY, arm.handX - arm.elbowX);
-  const wx = arm.handX - Math.cos(wristAngle) * 11 * bd;
-  const wy = arm.handY - Math.sin(wristAngle) * 11 * bd;
-  ctx.save();
-  ctx.translate(wx, wy);
-  ctx.rotate(wristAngle);
-  ctx.fillStyle = '#f5f5f5';
-  ctx.fillRect(-5, -6 * bd, 8, 12 * bd);
-  ctx.strokeStyle = '#ccc';
-  ctx.lineWidth = 1;
-  for (let i = -4; i < 4; i += 2) {
-    ctx.beginPath();
-    ctx.moveTo(i, -6 * bd);
-    ctx.lineTo(i + 2, 6 * bd);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // GLOVE — egg-shaped with knuckle bumps and thumb
   ctx.save();
   ctx.translate(arm.handX, arm.handY);
   ctx.rotate(wristAngle);
-  // main body
-  ctx.fillStyle = gloveBase;
-  ctx.beginPath();
-  ctx.ellipse(3, 0, 14 * bd, 11 * bd, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // glove shadow underside
-  ctx.fillStyle = gloveShadow;
-  ctx.beginPath();
-  ctx.ellipse(3, 4, 14 * bd, 5 * bd, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // knuckles (3 small bumps across top)
-  ctx.fillStyle = gloveHilite;
-  for (let k = -6; k <= 10; k += 6) {
-    ctx.beginPath();
-    ctx.arc(k, -4 * bd, 3 * bd, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // thumb
-  ctx.fillStyle = gloveBase;
-  ctx.beginPath();
-  ctx.ellipse(-8, 3, 5 * bd, 4 * bd, 0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = gloveShadow;
-  ctx.beginPath();
-  ctx.ellipse(-8, 5, 5 * bd, 2 * bd, 0.4, 0, Math.PI * 2);
-  ctx.fill();
-  // highlight glint
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.beginPath();
-  ctx.ellipse(-2, -6, 5 * bd, 2 * bd, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // brand stripe
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillRect(-2, 1, 10, 1);
-  ctx.restore();
 
+  // wrist cuff (dark band at the cuff side of the glove)
+  ctx.fillStyle = gloveDark;
+  ctx.beginPath();
+  ctx.ellipse(-9, 0, 5 * bd, 8 * bd, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // main glove body
+  ctx.fillStyle = glove;
+  ctx.beginPath();
+  ctx.ellipse(3, 0, 13 * bd, 11 * bd, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // dark outline so the glove reads against the silhouette
+  ctx.strokeStyle = gloveDark;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  // thumb knot
+  ctx.fillStyle = glove;
+  ctx.beginPath();
+  ctx.ellipse(-7, 4, 5 * bd, 4 * bd, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = gloveDark;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  // soft shine on top
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(-1, -5, 6 * bd, 2 * bd, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
   ctx.restore();
 }
 
 function drawHead(ctx, pose, p, ht, f) {
-  const skin = p.skin;
-  const shadow = shadeColor(skin, -0.22);
-  const deep = shadeColor(skin, -0.38);
-  const hilite = shadeColor(skin, 0.18);
-  const hair = p.hair;
-  const hairShadow = shadeColor(hair, -0.35);
+  // Silhouette head — solid black oval, no facial features. The fighter's
+  // identity comes from the HAIR (style + color) drawn on top.
+  const body = p.body || p.skin || '#070707';
+  const hair = p.hair || '#ffffff';
+  const hairShadow = shadeColor(hair, -0.30);
   const hairHilite = shadeColor(hair, 0.25);
-  const hairStyle = (p.hairStyle || f.id || 'short');
+  const hairStyle = (p.hairStyle || (f && f.data && f.data.hairStyle) || (f && f.hairStyle) || 'short');
 
   ctx.save();
   ctx.translate(pose.headOffset.x, pose.headOffset.y);
 
-  // NECK with trapezius shadow
-  ctx.fillStyle = skin;
+  // NECK
+  ctx.fillStyle = body;
   ctx.beginPath();
   ctx.moveTo(-8, 4);
   ctx.lineTo(-10, 14);
@@ -1546,140 +1843,202 @@ function drawHead(ctx, pose, p, ht, f) {
   ctx.lineTo(8, 4);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = shadow;
-  ctx.fillRect(-10, 12, 20, 3);
 
-  // HEAD — oval with more realistic proportions
-  ctx.fillStyle = skin;
+  // HEAD silhouette
+  ctx.fillStyle = body;
   ctx.beginPath();
   ctx.ellipse(0, 0, 18, 22 * ht, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // JAW shading — darker along bottom sides
-  ctx.fillStyle = withAlpha(shadow, 0.5);
+  // Subtle inner shadow on the lower half of the face to give the head a
+  // sense of volume now that the body is rendered in a vibrant color
+  // (without this the head reads as a flat colored disk).
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
   ctx.beginPath();
-  ctx.moveTo(-17, 2);
-  ctx.quadraticCurveTo(-12, 16, 0, 18);
-  ctx.quadraticCurveTo(12, 16, 17, 2);
-  ctx.lineTo(14, 10);
-  ctx.quadraticCurveTo(0, 14, -14, 10);
-  ctx.closePath();
+  ctx.ellipse(0, 6, 16, 14 * ht, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // CHEEKBONE highlight
-  ctx.fillStyle = withAlpha(hilite, 0.4);
-  ctx.beginPath();
-  ctx.ellipse(-10, 2, 4, 2, -0.3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(10, 2, 4, 2, 0.3, 0, Math.PI * 2);
-  ctx.fill();
+  // Minimal eye dots — keeps the silhouette aesthetic but lets the head
+  // read as a face. Small, dark, slightly offset toward the facing side.
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.beginPath(); ctx.arc(-4, -2, 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(4, -2, 1.6, 0, Math.PI * 2); ctx.fill();
 
-  // BROW RIDGE
-  ctx.fillStyle = withAlpha(deep, 0.35);
-  ctx.fillRect(-11, -6, 22, 2);
-
-  // EYEBROWS (darker, thick)
-  ctx.fillStyle = hairShadow;
-  ctx.fillRect(-11, -6, 7, 2);
-  ctx.fillRect(4, -6, 7, 2);
-
-  // EYES — whites + iris + pupil
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.ellipse(6, -2, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(-7, -2, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#2a4a6a';
-  ctx.beginPath(); ctx.arc(6, -2, 1.8, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(-7, -2, 1.8, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#0a0a0a';
-  ctx.beginPath(); ctx.arc(6, -2, 1, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(-7, -2, 1, 0, Math.PI * 2); ctx.fill();
-
-  // NOSE — small triangle with shading
-  ctx.fillStyle = withAlpha(shadow, 0.45);
-  ctx.beginPath();
-  ctx.moveTo(-2, -4);
-  ctx.lineTo(-3, 4);
-  ctx.lineTo(3, 4);
-  ctx.lineTo(2, -4);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = withAlpha(deep, 0.4);
-  ctx.fillRect(-3, 3, 2, 1);
-  ctx.fillRect(1, 3, 2, 1);
-
-  // HAIR — per style
+  // === HAIR (per-fighter unique style + color) ============================
   ctx.fillStyle = hair;
-  if (hairStyle === 'bald' || hairStyle === 'buzz' || f.id === 'boris') {
-    // Buzz/bald cut: just a faint cap
-    ctx.beginPath();
-    ctx.ellipse(0, -10, 17, 9, 0, Math.PI, 0);
-    ctx.fill();
-    ctx.fillStyle = withAlpha(hairShadow, 0.7);
-    ctx.beginPath();
-    ctx.ellipse(0, -8, 17, 4, 0, Math.PI, 0);
-    ctx.fill();
-  } else if (hairStyle === 'mohawk' || f.id === 'jin' || f.id === 'amir') {
-    // Short mohawk / short top
-    ctx.beginPath();
-    ctx.ellipse(0, -12, 17, 10, 0, Math.PI, 0);
-    ctx.fill();
-    ctx.fillStyle = hairHilite;
-    ctx.fillRect(-2, -20, 4, 10);
-  } else if (hairStyle === 'long' || f.id === 'diana' || f.id === 'rafa') {
-    // Long hair — extends down sides
-    ctx.beginPath();
-    ctx.ellipse(0, -10, 19, 13, 0, Math.PI, 0);
-    ctx.fill();
-    ctx.fillRect(-19, -10, 6, 22);
-    ctx.fillRect(13, -10, 6, 22);
-    // ponytail on the back side
-    ctx.beginPath();
-    ctx.ellipse(-16, 2, 4, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    // Default — short swept
-    ctx.beginPath();
-    ctx.ellipse(0, -10, 18, 12, 0, Math.PI, 0);
-    ctx.fill();
-    ctx.fillRect(-18, -12, 5, 10);
-    ctx.fillRect(13, -12, 5, 10);
-    // hair highlight
-    ctx.fillStyle = hairHilite;
-    ctx.beginPath();
-    ctx.ellipse(-4, -18, 8, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
+  switch (hairStyle) {
+    case 'spiky': {
+      // KAI — short hair with sharp upward spikes
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 18, 11, 0, Math.PI, 0);
+      ctx.fill();
+      for (let i = -12; i <= 12; i += 6) {
+        ctx.beginPath();
+        ctx.moveTo(i - 2, -16);
+        ctx.lineTo(i + 1, -26);
+        ctx.lineTo(i + 4, -16);
+        ctx.closePath();
+        ctx.fill();
+      }
+      break;
+    }
+    case 'mohawk': {
+      // TONY — sides shaved, tall mohawk
+      ctx.fillStyle = hairShadow;
+      ctx.beginPath();
+      ctx.ellipse(0, -8, 17, 6, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = hair;
+      ctx.beginPath();
+      ctx.moveTo(-4, -10);
+      ctx.lineTo(-3, -28);
+      ctx.lineTo(0, -32);
+      ctx.lineTo(3, -28);
+      ctx.lineTo(4, -10);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'topknot': {
+      // HIRO — bald-ish top with samurai topknot
+      ctx.fillStyle = hairShadow;
+      ctx.beginPath();
+      ctx.ellipse(0, -8, 16, 5, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = hair;
+      // band
+      ctx.fillRect(-4, -16, 8, 4);
+      // bun
+      ctx.beginPath();
+      ctx.arc(0, -22, 5, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'wild': {
+      // BORIS — bushy wild hair, lots of tufts
+      ctx.beginPath();
+      ctx.ellipse(0, -12, 21, 12, 0, Math.PI, 0);
+      ctx.fill();
+      const tufts = [[-14, -18], [-7, -22], [0, -24], [7, -22], [14, -18]];
+      for (const [x, y] of tufts) {
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // beard hint
+      ctx.beginPath();
+      ctx.ellipse(0, 12, 14, 7, 0, 0, Math.PI);
+      ctx.fill();
+      break;
+    }
+    case 'long_pony': {
+      // RAFA — top hair tied back into a long ponytail
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 19, 12, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillRect(-19, -10, 5, 12);
+      ctx.fillRect(14, -10, 5, 12);
+      // ponytail extending down behind head (back side)
+      ctx.beginPath();
+      ctx.moveTo(-12, -2);
+      ctx.quadraticCurveTo(-22, 8, -18, 24);
+      ctx.lineTo(-13, 24);
+      ctx.quadraticCurveTo(-15, 10, -8, 0);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'crew': {
+      // AMIR — flat-top crew cut
+      ctx.beginPath();
+      ctx.moveTo(-15, -10);
+      ctx.lineTo(-15, -17);
+      ctx.lineTo(15, -17);
+      ctx.lineTo(15, -10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 16, 4, 0, Math.PI, 0);
+      ctx.fill();
+      break;
+    }
+    case 'tall_spike': {
+      // JIN — single tall sweeping spike
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 17, 8, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-6, -16);
+      ctx.lineTo(2, -34);
+      ctx.lineTo(8, -28);
+      ctx.lineTo(8, -16);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'long_flame': {
+      // DIANA — long flowing hair with side wisps
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 20, 13, 0, Math.PI, 0);
+      ctx.fill();
+      // left flow
+      ctx.beginPath();
+      ctx.moveTo(-19, -8);
+      ctx.quadraticCurveTo(-24, 6, -18, 24);
+      ctx.lineTo(-12, 24);
+      ctx.quadraticCurveTo(-15, 6, -12, -8);
+      ctx.closePath();
+      ctx.fill();
+      // right flow
+      ctx.beginPath();
+      ctx.moveTo(19, -8);
+      ctx.quadraticCurveTo(24, 6, 18, 24);
+      ctx.lineTo(12, 24);
+      ctx.quadraticCurveTo(15, 6, 12, -8);
+      ctx.closePath();
+      ctx.fill();
+      // top wisp highlight
+      ctx.fillStyle = hairHilite;
+      ctx.beginPath();
+      ctx.ellipse(-4, -18, 8, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'buzz': {
+      // VIKTOR — buzz cut (thin cap)
+      ctx.beginPath();
+      ctx.ellipse(0, -8, 17, 8, 0, Math.PI, 0);
+      ctx.fill();
+      break;
+    }
+    case 'high_pony': {
+      // ZARA — top hair pulled into a high ponytail
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 17, 11, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillRect(-17, -10, 4, 4);
+      ctx.fillRect(13, -10, 4, 4);
+      // high ponytail arc behind
+      ctx.beginPath();
+      ctx.moveTo(-2, -18);
+      ctx.quadraticCurveTo(-16, -22, -22, -8);
+      ctx.quadraticCurveTo(-26, 6, -20, 18);
+      ctx.lineTo(-14, 16);
+      ctx.quadraticCurveTo(-18, 4, -14, -6);
+      ctx.quadraticCurveTo(-8, -14, 0, -14);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    default: {
+      // generic short swept hair
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 18, 12, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillRect(-18, -12, 5, 10);
+      ctx.fillRect(13, -12, 5, 10);
+    }
   }
-
-  // EAR hint (front side only)
-  ctx.fillStyle = shadow;
-  ctx.beginPath();
-  ctx.ellipse(17, 2, 2, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // MOUTH
-  ctx.fillStyle = '#4a1a18';
-  if (f.state === 'attack') {
-    ctx.beginPath(); ctx.ellipse(1, 9, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
-  } else if (f.state === 'hit' || f.state === 'down') {
-    ctx.beginPath(); ctx.ellipse(1, 9, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-  } else {
-    ctx.fillRect(-3, 9, 8, 1.5);
-  }
-  // Mouthguard accent (visible when mouth open)
-  if (f.state === 'attack' || f.state === 'hit') {
-    ctx.fillStyle = p.accent || '#ffd34a';
-    ctx.fillRect(-3, 10, 8, 1.5);
-  }
-  // Lower lip
-  ctx.fillStyle = withAlpha(shadow, 0.4);
-  ctx.fillRect(-4, 11, 10, 1);
-
-  // Sweat / shine on forehead
-  ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  ctx.beginPath();
-  ctx.ellipse(-3, -8, 5, 2, 0, 0, Math.PI * 2);
-  ctx.fill();
 
   ctx.restore();
 }
@@ -2047,14 +2406,19 @@ function drawFighterStandalone(ctx, fs, fighter) {
   drawLeg(ctx, pose.legL, p, bd);
   ctx.save();
   ctx.translate(pose.pelvis.x, pose.pelvis.y);
-  ctx.fillStyle = p.trunks;
+  // Shorts are a darker shade of the body color (matches main drawFighter
+  // logic). p.trunks/p.shorts2 are body-colored after fighters.js
+  // normalization, so we shade them down here to keep the shorts visible
+  // against the body torso.
+  const shortsCol = shadeColor(p.body || p.skin || '#222', -0.55);
+  ctx.fillStyle = shortsCol;
   ctx.fillRect(-26 * bd, -6, 52 * bd, 36);
-  ctx.fillStyle = p.shorts2 || p.trunks;
+  ctx.fillStyle = shortsCol;
   ctx.fillRect(-26 * bd, 22, 52 * bd, 8);
-  ctx.fillStyle = '#1a1a1a';
-  ctx.fillRect(-26 * bd, -10, 52 * bd, 6);
-  ctx.fillStyle = p.accent;
-  ctx.fillRect(-6, -10, 12, 6);
+  // Waistband uses the fighter's accent (glove) color so it's distinct
+  // from both the body and the shorts.
+  ctx.fillStyle = p.accent || '#ffffff';
+  ctx.fillRect(-26 * bd, -10, 52 * bd, 4);
   ctx.restore();
   drawArm(ctx, pose.armBack, p, bd, true);
   drawTorso(ctx, pose, p, bd, ht, fighter);

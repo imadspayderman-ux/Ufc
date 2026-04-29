@@ -348,15 +348,34 @@ h3 { font-size: 22px; letter-spacing: 2px; }
 .tc-btn.adv   { background: linear-gradient(180deg, #5a3a8a 0%, #2a1a48 100%); border-color: #8060c0; color: #e0d0ff; }
 .tc-btn.special { background: linear-gradient(180deg, #ffcc33 0%, #aa7a10 100%); border-color: #ffe580; color: #1a1208; text-shadow: none; }
 
-/* Mobile / narrow-screen: shrink buttons so they fit. */
+/* Mobile / narrow-screen: bigger, touch-friendly buttons. */
 @media (max-width: 900px) {
-  .tc-btn { font-size: 10px; padding: 5px 6px; min-width: 44px; }
-  .tc-dpad { grid-template-columns: 36px 36px 36px; grid-template-rows: 30px 30px 30px; }
+  .tc-btn { font-size: 12px; padding: 10px 10px; min-width: 56px; min-height: 40px; border-bottom-width: 4px; }
+  .tc-dpad { grid-template-columns: 52px 52px 52px; grid-template-rows: 44px 44px 44px; gap: 6px; }
+  .tc-btn.dpad { font-size: 22px; }
 }
 @media (max-width: 640px) {
-  #touch-controls { padding: 0 6px 2px; gap: 6px; }
-  .tc-btn { font-size: 9px; padding: 4px 5px; min-width: 36px; letter-spacing: 0.5px; }
-  .tc-dpad { grid-template-columns: 30px 30px 30px; grid-template-rows: 26px 26px 26px; }
+  #touch-controls { padding: 0 8px 6px; gap: 6px; }
+  .tc-btn { font-size: 11px; padding: 8px 8px; min-width: 48px; min-height: 38px; letter-spacing: 0.5px; border-bottom-width: 4px; }
+  .tc-dpad { grid-template-columns: 46px 46px 46px; grid-template-rows: 40px 40px 40px; gap: 5px; }
+  .tc-btn.dpad { font-size: 20px; }
+  .tc-row { gap: 4px; }
+}
+/* On phones in portrait the canvas is short; arrange things to maximize the
+   octagon area and keep all controls within thumb reach. */
+@media (max-width: 640px) and (orientation: portrait) {
+  #fight { justify-content: space-between; }
+  #hud { font-size: 11px; }
+  #hud .hud-name { font-size: 14px; }
+  #hud .hud-nick, #hud .hud-style { display: none; }
+  #hud .hud-portrait { display: none; }
+  #hud .timer { font-size: 28px; }
+  #hud .round { font-size: 12px; }
+  #arena { max-height: calc(100vh - 280px); }
+  #touch-controls { gap: 4px; padding: 0 4px 4px; }
+  .tc-row { flex-wrap: nowrap; }
+  .tc-btn { font-size: 10px; min-width: 44px; padding: 6px 4px; }
+  .tc-dpad { grid-template-columns: 40px 40px 40px; grid-template-rows: 36px 36px 36px; }
 }
 
 #arena {
@@ -439,4 +458,34 @@ kbd {
   .logo-bottom { font-size: 76px; }
   .select-info { flex-direction: column; gap: 12px; }
   .howto-grid { grid-template-columns: 1fr; }
+}
+
+/* Rotate-to-landscape hint for narrow phones in portrait. The game is
+   designed for landscape; portrait users get covered by this overlay
+   until they rotate. */
+#rotate-hint {
+  display: none;
+  position: fixed; inset: 0;
+  background: var(--bg-0);
+  z-index: 9999;
+  align-items: center; justify-content: center;
+  flex-direction: column;
+  text-align: center; gap: 24px; padding: 24px;
+  color: var(--text);
+}
+.rotate-icon {
+  font-size: 96px;
+  animation: rotate-anim 2s ease-in-out infinite;
+}
+@keyframes rotate-anim {
+  0%, 40%, 100% { transform: rotate(0deg); }
+  60%, 90% { transform: rotate(90deg); }
+}
+.rotate-text {
+  font-size: 18px; letter-spacing: 1px; line-height: 1.6;
+  color: var(--gold);
+}
+.rotate-text span { display: inline-block; margin-top: 8px; color: var(--text); font-size: 16px; }
+@media (max-width: 820px) and (orientation: portrait) {
+  #rotate-hint { display: flex; }
 }
