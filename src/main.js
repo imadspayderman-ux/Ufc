@@ -254,7 +254,16 @@ function applyP1Input(match) {
       if (g) {
         if (g.position === 'back_mount') { if (match.attemptSubmission(p, 'rear_naked_choke')) return; }
         else if (g.position === 'mount') { if (match.attemptSubmission(p, 'armbar')) return; }
-        else if (g.position === 'side_control') { if (match.attemptSubmission(p, 'kimura')) return; }
+        // Side-control: Kimura is the classic threat, kneebar is a leg-attack
+        // option (try kimura first, fall through to kneebar if not ready).
+        else if (g.position === 'side_control') {
+          if (match.attemptSubmission(p, 'kimura')) return;
+          if (match.attemptSubmission(p, 'kneebar')) return;
+        }
+        // Half-guard: kneebar is the primary submission threat for top.
+        else if (g.position === 'half_guard') {
+          if (match.attemptSubmission(p, 'kneebar')) return;
+        }
       }
     }
     if (Input.consumePressed('jab')) tryAttack(p, 'ground_punch');
@@ -265,10 +274,34 @@ function applyP1Input(match) {
   }
   if (p.state === 'ground_bottom') {
     if (Input.consumePressed('break') || Input.consumePressed('up')) { match.tryStandUp(p); return; }
+    // Sweep / reversal — F (advance) from bottom in guard or half-guard
+    // attempts to reverse top to bottom and end up in side_control.
+    if (Input.consumePressed('advance')) {
+      if (match.trySweep && match.trySweep(p)) return;
+    }
     if (Input.consumePressed('submit')) {
       // Bottom can attack submissions from guard
       if (match.attemptSubmission(p, 'triangle')) return;
       if (match.attemptSubmission(p, 'armbar')) return;
+    }
+    return;
+  }
+  if (p.state === 'front_headlock_top') {
+    // Snap-down hunter: D'arce → Anaconda → Guillotine. R/T/E try them in
+    // order; release with break (B) returns to neutral.
+    if (Input.consumePressed('break')) { match._endFrontHeadlock('release'); return; }
+    if (Input.consumePressed('submit')) {
+      if (match.attemptSubmission(p, 'darce')) return;
+      if (match.attemptSubmission(p, 'anaconda')) return;
+      if (match.attemptSubmission(p, 'guillotine')) return;
+    }
+    return;
+  }
+  if (p.state === 'front_headlock_bottom') {
+    // Caught fighter: hammer the escape buttons to break out (UP / break).
+    if (Input.consumePressed('break') || Input.consumePressed('up') || Input.consumePressed('tap_escape')) {
+      match._endFrontHeadlock('escape');
+      return;
     }
     return;
   }
@@ -557,6 +590,14 @@ function wireTouchButton(btn) {
   btn.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 document.querySelectorAll('#touch-controls .tc-btn').forEach(wireTouchButton);
+
+// Global safety net: if focus is lost (alt-tab, dev tools, modal popup) any
+// touch button that's still "held" should release so the player doesn't come
+// back to a stuck input. Pairs with the `held.clear()` in input.js's blur
+// handler.
+window.addEventListener('blur', () => {
+  document.querySelectorAll('#touch-controls .tc-btn.active').forEach((b) => b.classList.remove('active'));
+});
 
 // init
 buildRoster();

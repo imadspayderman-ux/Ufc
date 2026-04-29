@@ -38,6 +38,10 @@ export class Renderer {
   // Expanding impact ring spawned at strike connect. Gives a visible burst
   // that sells the force of the punch. Ring size/thickness scale with damage.
   spawnImpactRing(x, y, dmg) {
+    // Defensive cap so a long, frantic match can't accumulate effect arrays
+    // beyond what we'd ever want on screen at once. Older entries are dropped
+    // first (FIFO) so the freshest hits remain.
+    if (this.impactRings.length > 80) this.impactRings.splice(0, this.impactRings.length - 80);
     const size = dmg >= 16 ? 'heavy' : dmg >= 10 ? 'medium' : 'light';
     this.impactRings.push({
       x, y,
@@ -58,6 +62,7 @@ export class Renderer {
   }
 
   spawnParticles(x, y, n, palette = ['#ffcc33', '#ff5566', '#fff'], opts = {}) {
+    if (this.particles.length > 400) this.particles.splice(0, this.particles.length - 400);
     for (let i = 0; i < n; i++) {
       this.particles.push({
         x, y,
@@ -71,6 +76,7 @@ export class Renderer {
     }
   }
   spawnPopup(x, y, text, color = '#fff', size = 28) {
+    if (this.popups.length > 40) this.popups.splice(0, this.popups.length - 40);
     this.popups.push({ x, y, text, color, size, life: 40, vy: -1.4 });
   }
 
@@ -438,7 +444,14 @@ export class Renderer {
           // For guard: minimal offset (top is between bottom's legs, both faces visible).
           // For side_control: medium offset (top is perpendicular).
           const lateral = pos === 'guard' ? 0
+                          // half_guard: bottom is on side / partial back, only
+                          // a small offset so torso reads as wrapping the
+                          // top's leg rather than fully laid out.
+                          : pos === 'half_guard' ? -10 * topFacing
                           : pos === 'side_control' ? -34 * topFacing
+                          // front_headlock: bottom is bent over but UPRIGHT;
+                          // no lateral offset (poses already handle layout).
+                          : pos === 'front_headlock' ? 0
                           : -42 * topFacing;
           ctx.translate(lateral, 0);
         }
@@ -470,6 +483,22 @@ export class Renderer {
     if (match.flash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${match.flash * 0.07})`;
       ctx.fillRect(0, 0, ARENA.width, ARENA.height);
+    }
+    // Near-finish red screen pulse: when an active submission's FINISH gauge
+    // crosses 85%, paint a pulsing red vignette over the whole scene to
+    // signal "tap or sleep" to the defender. Pulse rate accelerates as the
+    // gauge approaches 100. UFC 5 reference: identical to the red iris shrink
+    // when a fighter is about to go out.
+    if (match.grapple && match.grapple.submission) {
+      const sp = (match.grapple.submission.progress || 0) / 100;
+      if (sp >= 0.85) {
+        const k = (sp - 0.85) / 0.15;             // 0 at 85%, 1 at 100%
+        const rate = 0.20 + k * 0.35;             // pulse faster near finish
+        const wave = (Math.sin((match.tick || 0) * rate) + 1) * 0.5;
+        const alpha = 0.10 + k * 0.18 + wave * (0.06 + k * 0.10);
+        ctx.fillStyle = `rgba(180,18,18,${alpha})`;
+        ctx.fillRect(0, 0, ARENA.width, ARENA.height);
+      }
     }
     ctx.restore();
     // Intro banner text (drawn in screen space, outside shake+zoom transform).
@@ -510,13 +539,56 @@ export class Renderer {
       const s = g.submission;
       const cx = g.centerX;
       const cy = ARENA.groundY - 60;
-      ctx.strokeStyle = 'rgba(240,60,60,0.8)';
-      ctx.lineWidth = 5;
+      // Tightening ring: shrinks and reddens as progress climbs.
+      const prog = Math.max(0, Math.min(1, (s.progress || 0) / 100));
+      const radius = 42 - prog * 14;                      // cinches inward
+      const ringAlpha = 0.55 + prog * 0.4;
+      const t = match.tick || 0;
+      ctx.strokeStyle = prog > 0.85
+        ? `rgba(255,${60 - prog * 40},${60 - prog * 40},${ringAlpha})`
+        : `rgba(240,60,60,${ringAlpha})`;
+      ctx.lineWidth = 5 + prog * 3;
       ctx.setLineDash([8, 6]);
       ctx.beginPath();
-      ctx.arc(cx, cy, 40, 0, Math.PI * 2);
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
+      // Wrap-arms overlay: draws taut tendons connecting attacker's hands to
+      // the defender's controlled limb / neck. Tighter (closer + thicker) the
+      // higher the FINISH progress, giving the visceral "cinching" feel.
+      const att = s.attacker;
+      const def = s.defender;
+      if (att && def) {
+        const ax = att.x;
+        const ay = att.y - 70;
+        const dx = def.x;
+        const dy = def.y - 80;
+        const wave = Math.sin(t * 0.3) * (1 - prog) * 4;
+        ctx.strokeStyle = `rgba(20,20,20,${0.55 + prog * 0.30})`;
+        ctx.lineWidth = 6 + prog * 4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.quadraticCurveTo((ax + dx) / 2, (ay + dy) / 2 - 22 - prog * 6 + wave, dx, dy);
+        ctx.stroke();
+        // Second strand (figure-four / second hand). On RNC / front-headlock chokes
+        // both arms come together into one cinching bundle.
+        ctx.lineWidth = 4 + prog * 3;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay + 10);
+        ctx.quadraticCurveTo((ax + dx) / 2, (ay + dy) / 2 - 6 + wave * 0.5, dx, dy + 8);
+        ctx.stroke();
+        // Tension micro-shake at high progress — overlay shivers rapidly.
+        if (prog > 0.7) {
+          const sh = (prog - 0.7) * 6;
+          ctx.strokeStyle = `rgba(255,80,80,${0.20 + (prog - 0.7) * 1.0})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(ax + (Math.random() - 0.5) * sh, ay + (Math.random() - 0.5) * sh);
+          ctx.quadraticCurveTo((ax + dx) / 2, (ay + dy) / 2 - 18, dx + (Math.random() - 0.5) * sh, dy + (Math.random() - 0.5) * sh);
+          ctx.stroke();
+        }
+      }
       // Submission name text (subtle)
       ctx.fillStyle = 'rgba(255,240,240,0.9)';
       ctx.font = 'bold 14px system-ui';
@@ -540,6 +612,24 @@ function drawGrappleHUD(ctx, match) {
   const x = ARENA.width / 2;
   ctx.strokeText(label, x, 130);
   ctx.fillText(label, x, 130);
+  // Scramble gauge — only useful while a submission isn't running.
+  // Shows the bottom fighter's progress toward escaping the position.
+  if (!g.submission && typeof g.scramble === 'number') {
+    const bw = 220, bh = 8;
+    const bx = x - bw / 2, by = 142;
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+    ctx.fillStyle = '#0a0e22';
+    ctx.fillRect(bx, by, bw, bh);
+    const frac = Math.max(0, Math.min(1, g.scramble / 100));
+    // Gradient from blue (low) → amber (high) so the player can read the
+    // urgency of the bottom's mash at a glance.
+    ctx.fillStyle = frac > 0.7 ? '#ffaa44' : frac > 0.4 ? '#ddcc44' : '#44aaff';
+    ctx.fillRect(bx, by, bw * frac, bh);
+    ctx.fillStyle = '#cce0ff';
+    ctx.font = 'bold 10px system-ui';
+    ctx.fillText('SCRAMBLE', x, by - 4);
+  }
   if (g.submission) {
     const s = g.submission;
     // ----- UFC 5-style two-gauge readout -----
@@ -711,6 +801,31 @@ function computePose(f, t) {
     // tuck legs
     pose.legL.kneeY = -36; pose.legL.footY = -20;
     pose.legR.kneeY = -36; pose.legR.footY = -20;
+  }
+  if (f.state === 'wobble') {
+    // Drunken stagger: hands DROP, body sways side-to-side, head lolls,
+    // weight shifts unevenly between feet — a clear visual that this fighter
+    // is one clean shot from going out.
+    const k = Math.max(0, Math.min(1, f.wobbleFrames / 50));   // 1 fresh, 0 recovering
+    const sway   = Math.sin(t * 0.16) * 12 * k;
+    const sway2  = Math.cos(t * 0.11) * 6  * k;
+    const headLoll = Math.sin(t * 0.21 + 1.2) * 8 * k;
+    pose.pelvis.x = sway;
+    pose.pelvis.y = -82 + 4 * k;
+    pose.torsoAngle = (sway / 32) * (0.9 + 0.4 * Math.sin(t * 0.18));
+    pose.headOffset.x = -2 + sway + headLoll * 0.6;
+    pose.headOffset.y = -148 + 4 * k + Math.abs(headLoll) * 0.5;
+    // Hands hang LOW — defense is gone.
+    pose.armFront.shoulderX = 12 + sway2 * 0.3;
+    pose.armFront.elbowX = 18 - sway2 * 0.3;  pose.armFront.elbowY = -110 + 6 * k;
+    pose.armFront.handX = 22 - sway2 * 0.4;   pose.armFront.handY = -84 + 12 * k;
+    pose.armBack.shoulderX = -10 + sway2 * 0.3;
+    pose.armBack.elbowX = -16 + sway2 * 0.3;  pose.armBack.elbowY = -106 + 6 * k;
+    pose.armBack.handX = -22 + sway2 * 0.4;   pose.armBack.handY = -82 + 12 * k;
+    // Feet stagger: front foot lifts irregularly so the fighter looks unbalanced.
+    pose.legR.footX = 22 * bd + sway * 0.2;
+    pose.legR.footY = -Math.max(0, sway * 0.3);
+    pose.legL.footX = -22 * bd - sway * 0.2;
   }
   if (f.state === 'hit') {
     // Dramatic UFC-style hit reaction: head whips AWAY from impact,
@@ -933,6 +1048,19 @@ function computePose(f, t) {
       // Far arm framing the attacker's neck, near arm under-hooked.
       pose.armBack.shoulderX = -44;  pose.armBack.shoulderY = -22;  pose.armBack.elbowX = -36; pose.armBack.elbowY = -36;  pose.armBack.handX = -16;  pose.armBack.handY = -42;
       pose.armFront.shoulderX = -40; pose.armFront.shoulderY = -28; pose.armFront.elbowX = -28; pose.armFront.elbowY = -44; pose.armFront.handX = -8;   pose.armFront.handY = -50;
+    } else if (pos === 'half_guard') {
+      // HALF GUARD (bottom): on back / side, ONE leg trapping the top's leg.
+      // Far leg crossed up & over to control the trapped knee. Hands frame.
+      pose.pelvis.y = -16 + breathe * 0.2;
+      pose.torsoAngle = 0.08;
+      pose.headOffset.x = -68; pose.headOffset.y = -18;
+      // Trapped (near) leg: hooked over the top's leg, knee bent, foot tucked.
+      pose.legL.hipX = 4;  pose.legL.hipY = -12; pose.legL.kneeX = 24; pose.legL.kneeY = -38; pose.legL.footX = 8; pose.legL.footY = -34;
+      // Free (far) leg: posted on the mat for base.
+      pose.legR.hipX = 6;  pose.legR.hipY = -10; pose.legR.kneeX = 32; pose.legR.kneeY = -8;  pose.legR.footX = 60; pose.legR.footY = 0;
+      // Hands: near hand under-hooks, far hand frames on jaw.
+      pose.armBack.shoulderX = -42; pose.armBack.shoulderY = -22; pose.armBack.elbowX = -28; pose.armBack.elbowY = -42; pose.armBack.handX = -8; pose.armBack.handY = -56;
+      pose.armFront.shoulderX = -38; pose.armFront.shoulderY = -28; pose.armFront.elbowX = -22; pose.armFront.elbowY = -50; pose.armFront.handX = -2; pose.armFront.handY = -64;
     } else {
       // mount (default): flat on back, legs straight, hands shielding face.
       pose.headOffset.x = -76; pose.headOffset.y = -16;
@@ -980,6 +1108,22 @@ function computePose(f, t) {
       pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -80;
       pose.armFront.elbowX = 28; pose.armFront.elbowY = -56; pose.armFront.handX = 44; pose.armFront.handY = -40 + breath;
       pose.headOffset.x = 18; pose.headOffset.y = -98;
+    } else if (pos === 'half_guard') {
+      // HALF GUARD (top): low and pressed down, ONE leg captured between the
+      // bottom's legs (the trapped leg). Chest heavy on opponent, hips low,
+      // hunting to free the trapped knee for a pass to side control / mount.
+      pose.pelvis.x = press; pose.pelvis.y = -32 + breath * 0.4;
+      pose.torsoAngle = 0.34;                          // chest pressed down
+      // Trapped (right) leg: forced low and forward, knee planted near opponent's hip.
+      pose.legR.hipX = 12 * bd; pose.legR.hipY = -28; pose.legR.kneeX = 18 * bd; pose.legR.kneeY =  -8; pose.legR.footX = 32 * bd; pose.legR.footY =  0;
+      // Free (left) leg: sprawled wide for base.
+      pose.legL.hipX = -10 * bd; pose.legL.hipY = -28; pose.legL.kneeX = -28 * bd; pose.legL.kneeY = -10; pose.legL.footX = -46 * bd; pose.legL.footY = 0;
+      // Crossface arm + underhook hand framing.
+      pose.armBack.shoulderX = -16 * bd; pose.armBack.shoulderY = -82;
+      pose.armBack.elbowX = -2;  pose.armBack.elbowY = -64; pose.armBack.handX = 22; pose.armBack.handY = -52 + breath;
+      pose.armFront.shoulderX = 16 * bd; pose.armFront.shoulderY = -82;
+      pose.armFront.elbowX = 26; pose.armFront.elbowY = -56; pose.armFront.handX = 40; pose.armFront.handY = -42 + breath;
+      pose.headOffset.x = 14; pose.headOffset.y = -98;
     } else if (pos === 'back_mount') {
       // Back mount: seated behind with hooks (legs wrapped around opponent's
       // hips from behind). Arms reaching around front to grip.
@@ -1039,6 +1183,43 @@ function computePose(f, t) {
       }
     }
   }
+  if (f.state === 'front_headlock_top') {
+    // Top of a SNAP-DOWN front headlock — controller is upright/kneeling,
+    // their lead arm wrapped under the caught fighter's neck. Free hand grips
+    // the wrist or floats by the head looking for a choke entry.
+    const breathe = Math.sin(t * 0.16) * 1;
+    pose.pelvis.x = 0; pose.pelvis.y = -68 + breathe * 0.5;
+    pose.torsoAngle = 0.35;
+    pose.legL.hipX = -10 * bd; pose.legL.hipY = -64; pose.legL.kneeX = -16 * bd; pose.legL.kneeY = -20; pose.legL.footX = -10 * bd; pose.legL.footY = 0;
+    pose.legR.hipX =  10 * bd; pose.legR.hipY = -64; pose.legR.kneeX =  18 * bd; pose.legR.kneeY = -10; pose.legR.footX =  26 * bd; pose.legR.footY = 0;
+    // Choking arm: wraps under the opponent's neck.
+    pose.armFront.shoulderX = 18; pose.armFront.shoulderY = -114;
+    pose.armFront.elbowX = 38;  pose.armFront.elbowY = -94;
+    pose.armFront.handX = 16;   pose.armFront.handY = -70;
+    // Free hand: cups opponent's far shoulder for control.
+    pose.armBack.shoulderX = -12; pose.armBack.shoulderY = -110;
+    pose.armBack.elbowX = 4;   pose.armBack.elbowY = -90;
+    pose.armBack.handX = 30;   pose.armBack.handY = -68;
+    pose.headOffset.x = 6; pose.headOffset.y = -132;
+  }
+  if (f.state === 'front_headlock_bottom') {
+    // Bottom of a snap-down front headlock — bent forward at the waist, head
+    // pulled DOWN under the controller's armpit. Hands posted on opponent's
+    // hips for base, trying to drive forward to recover position.
+    const struggle = Math.sin(t * 0.22) * 3;
+    pose.pelvis.x = -8; pose.pelvis.y = -36 + struggle * 0.3;
+    pose.torsoAngle = -0.85;                            // bent way forward
+    pose.legL.hipX = -8 * bd; pose.legL.hipY = -32; pose.legL.kneeX = -22 * bd; pose.legL.kneeY = -8 + struggle * 0.4; pose.legL.footX = -36 * bd; pose.legL.footY = 0;
+    pose.legR.hipX =  8 * bd; pose.legR.hipY = -32; pose.legR.kneeX =  20 * bd; pose.legR.kneeY = -10 - struggle * 0.4; pose.legR.footX = 32 * bd; pose.legR.footY = 0;
+    // Both hands posted on opponent's body trying to drive through.
+    pose.armBack.shoulderX = -18; pose.armBack.shoulderY = -64;
+    pose.armBack.elbowX = -8 + struggle * 0.4;  pose.armBack.elbowY = -36;
+    pose.armBack.handX  = 8 + struggle;  pose.armBack.handY  = -10;
+    pose.armFront.shoulderX = 16; pose.armFront.shoulderY = -64;
+    pose.armFront.elbowX = 22 - struggle * 0.4; pose.armFront.elbowY = -36;
+    pose.armFront.handX  = 38 - struggle; pose.armFront.handY  = -10;
+    pose.headOffset.x = 22; pose.headOffset.y = -34 + struggle * 0.5;   // pulled down into armpit
+  }
   if (f.state === 'sub_offense') {
     // Locking in a submission. We animate the WRAP-UP from "reaching out"
     // toward "fully cinched" then hold a tight, distinctive pose for each
@@ -1047,9 +1228,17 @@ function computePose(f, t) {
     const lockTotal = f.subLockTotal || 0;
     const lockK = lockTotal > 0 ? Math.max(0, Math.min(1, lockFrame / lockTotal)) : 1;
     const reach = 1 - lockK; // 1 at start of lock-in, 0 once fully wrapped
-    const subKind = f.subLockKind;
-    const pull  = Math.sin(t * 0.32) * 2;            // hard isometric pulling
-    const cinch = lockTotal === 0 ? pull : 0;        // only after lock-in is set
+    // Normalise submission kind. Engine uses 'rear_naked_choke' but the
+    // renderer historically branched on 'rear_naked' — accept both.
+    const rawKind = f.subLockKind;
+    const subKind = rawKind === 'rear_naked_choke' ? 'rear_naked' : rawKind;
+    // Submission FINISH gauge in 0..1 (drives tightening — the higher the
+    // progress, the tighter the wrap, the deeper the deformation).
+    const prog = Math.max(0, Math.min(1, (f.subProgress || 0) / 100));
+    const pull  = Math.sin(t * 0.32) * (2 + prog * 4);            // pull harder as it tightens
+    // After lock-in, cinch amplitude scales with progress (0 at lock-in
+    // moment, much stronger near finish). This drives the body deformation.
+    const cinch = lockTotal === 0 ? pull : 0;
 
     if (subKind === 'armbar') {
       // ARMBAR: attacker is on his BACK with hips up against opponent's
@@ -1125,6 +1314,59 @@ function computePose(f, t) {
       pose.armBack.elbowX = 6 + reach * 10; pose.armBack.elbowY = -100;
       pose.armBack.handX  = 22 + reach * 12 - cinch * 0.5; pose.armBack.handY  = -84 - cinch * 0.4;
       pose.headOffset.x = 4; pose.headOffset.y = -136;
+    } else if (subKind === 'darce') {
+      // D'ARCE CHOKE: from front-headlock or scramble. Choking arm DEEP under
+      // opponent's near armpit, palm clamped on top of opponent's nape; free
+      // hand grips the choking forearm. Body tilted to the FAR side cinching
+      // shoulder & neck together.
+      pose.pelvis.x = -4; pose.pelvis.y = -52;
+      pose.torsoAngle = 0.42 - reach * 0.08;
+      pose.legL.hipX = -12; pose.legL.hipY = -46; pose.legL.kneeX = -22; pose.legL.kneeY = -8; pose.legL.footX = -16; pose.legL.footY = 0;
+      pose.legR.hipX =  10; pose.legR.hipY = -46; pose.legR.kneeX =  20; pose.legR.kneeY = -10; pose.legR.footX = 30; pose.legR.footY = 0;
+      // Choking arm threads under opponent's far armpit and clamps onto own bicep.
+      pose.armFront.shoulderX = 18; pose.armFront.shoulderY = -100;
+      pose.armFront.elbowX = 38 + reach * 10; pose.armFront.elbowY = -82;
+      pose.armFront.handX  = 12 + reach * 12 - cinch * 0.6; pose.armFront.handY  = -64 - cinch * 0.3;
+      // Free hand crushes the choking arm tighter (figure-four grip).
+      pose.armBack.shoulderX = -14; pose.armBack.shoulderY = -100;
+      pose.armBack.elbowX = 6 + reach * 8; pose.armBack.elbowY = -82;
+      pose.armBack.handX  = 30 + reach * 10 - cinch * 0.6; pose.armBack.handY  = -68 - cinch * 0.3;
+      pose.headOffset.x = 8; pose.headOffset.y = -126;
+    } else if (subKind === 'anaconda') {
+      // ANACONDA CHOKE: similar to D'arce but the choking arm wraps DEEP
+      // around the front of the neck (not under the armpit), other hand
+      // squeezes the wrist. Attacker rolls TOWARD the choke (rolling anaconda
+      // motion) so torso tilts hard.
+      pose.pelvis.x = -8; pose.pelvis.y = -50;
+      pose.torsoAngle = 0.62 - reach * 0.10;       // rolled hard onto side
+      pose.legL.hipX = -10; pose.legL.hipY = -44; pose.legL.kneeX = -8;  pose.legL.kneeY = -12; pose.legL.footX = 12; pose.legL.footY = -2;
+      pose.legR.hipX =  10; pose.legR.hipY = -44; pose.legR.kneeX =  16; pose.legR.kneeY = -16; pose.legR.footX = 28; pose.legR.footY = -8;
+      // Choking arm wraps the neck from the front.
+      pose.armFront.shoulderX = 16; pose.armFront.shoulderY = -94;
+      pose.armFront.elbowX = 34 + reach * 10; pose.armFront.elbowY = -78;
+      pose.armFront.handX  = 8 + reach * 12 - cinch * 0.7; pose.armFront.handY  = -56 - cinch * 0.3;
+      pose.armBack.shoulderX = -10; pose.armBack.shoulderY = -94;
+      pose.armBack.elbowX = 8 + reach * 8; pose.armBack.elbowY = -76;
+      pose.armBack.handX  = 26 + reach * 12 - cinch * 0.7; pose.armBack.handY  = -60 - cinch * 0.3;
+      pose.headOffset.x = 14; pose.headOffset.y = -118;
+    } else if (subKind === 'kneebar') {
+      // KNEEBAR: attacker on side / back, opponent's leg trapped between
+      // attacker's thighs, attacker's hips driving UP against the back of
+      // opponent's knee. Both hands wrap the opponent's ANKLE pulling it
+      // toward attacker's chest (hyper-extending the knee).
+      pose.pelvis.x = 4; pose.pelvis.y = -28 - reach * 4;
+      pose.torsoAngle = 0.45 + reach * 0.05;
+      // Attacker's legs clamp opponent's leg.
+      pose.legL.hipX = -8; pose.legL.hipY = -22; pose.legL.kneeX = -6; pose.legL.kneeY = -76; pose.legL.footX = 12; pose.legL.footY = -90;
+      pose.legR.hipX =  8; pose.legR.hipY = -22; pose.legR.kneeX = 16; pose.legR.kneeY = -70; pose.legR.footX = 30; pose.legR.footY = -86;
+      // Both hands cinching the trapped ankle to attacker's chest.
+      pose.armBack.shoulderX = -22; pose.armBack.shoulderY = -52;
+      pose.armBack.elbowX = -2 + reach * 12; pose.armBack.elbowY = -76;
+      pose.armBack.handX  = 14 + reach * 14 + cinch * 0.4; pose.armBack.handY  = -94 - cinch * 0.4;
+      pose.armFront.shoulderX = -18; pose.armFront.shoulderY = -56;
+      pose.armFront.elbowX = 2 + reach * 12; pose.armFront.elbowY = -78;
+      pose.armFront.handX  = 18 + reach * 14 + cinch * 0.4; pose.armFront.handY  = -96 - cinch * 0.4;
+      pose.headOffset.x = -22; pose.headOffset.y = -50;
     } else {
       // TRIANGLE (and any other): figure-four with the LEGS around
       // opponent's neck and arm. Attacker on back, hips up, one leg
@@ -1151,15 +1393,22 @@ function computePose(f, t) {
     // the submission being applied so the viewer instantly understands what's
     // happening (arm extended = armbar, head pulled down = guillotine, etc).
     // Falls back to position-aware generic defense when no lock is active.
-    const subKind = f.subLockKind;
-    const flail = Math.sin(t * 0.42) * 6;
-    const tap   = Math.sin(t * 0.7)  * 3;     // rapid tapping motion
+    const rawKind = f.subLockKind;
+    const subKind = rawKind === 'rear_naked_choke' ? 'rear_naked' : rawKind;
+    // Tremor / panic flail amplitude scales with FINISH gauge — the closer
+    // the lock is to finishing, the more violently the defender shakes.
+    const prog  = Math.max(0, Math.min(1, (f.subProgress || 0) / 100));
+    const tremorAmp = 1 + prog * 1.6;
+    const flail = Math.sin(t * 0.42) * 6 * tremorAmp;
+    const tap   = Math.sin(t * 0.7)  * 3 * tremorAmp;     // rapid tapping motion
     pose.pelvis.x = 0; pose.pelvis.y = -14;
     pose.torsoAngle = 0.06;
 
     if (subKind === 'armbar') {
       // ARMBAR defense: defender flat on back, trapped arm YANKED straight
       // toward attacker (hyper-extended look). Free hand claws desperately.
+      // The trapped arm hyper-extends FURTHER as the lock tightens (progress).
+      const ext = prog * 10;                          // extra extension (hyper-extension)
       pose.pelvis.y = -14;
       pose.torsoAngle = 0.02;
       pose.headOffset.x = -80; pose.headOffset.y = -14;
@@ -1167,8 +1416,8 @@ function computePose(f, t) {
       pose.legR.hipX = 6;  pose.legR.kneeX = 38 - tap * 0.4; pose.legR.kneeY = -6;  pose.legR.footX = 72; pose.legR.footY =  0;
       // TRAPPED arm (front): yanked rigidly STRAIGHT away from body
       pose.armFront.shoulderX = -18; pose.armFront.shoulderY = -62;
-      pose.armFront.elbowX = 20; pose.armFront.elbowY = -68;
-      pose.armFront.handX  = 58; pose.armFront.handY  = -70;
+      pose.armFront.elbowX = 20 + ext * 0.6; pose.armFront.elbowY = -68 - ext * 0.2;
+      pose.armFront.handX  = 58 + ext;       pose.armFront.handY  = -70 - ext * 0.3;
       // FREE arm (back): claws / slaps ground in panic
       pose.armBack.shoulderX = -40; pose.armBack.shoulderY = -60;
       pose.armBack.elbowX = -54 + flail; pose.armBack.elbowY = -42;
@@ -1191,10 +1440,12 @@ function computePose(f, t) {
       pose.armBack.handX  = -2 - flail * 0.6; pose.armBack.handY  = -78 + tap;
     } else if (subKind === 'rear_naked') {
       // RNC defense: face-down, head pulled UP as the choking arm crushes the
-      // throat. Both hands claw at the choking forearm.
+      // throat. Both hands claw at the choking forearm. The spine ARCHES
+      // back further with progress (head pulled higher) — classic RNC visual.
       pose.pelvis.y = -10;
-      pose.torsoAngle = -0.10;
-      pose.headOffset.x = -72; pose.headOffset.y = -22 + tap * 0.5;
+      pose.torsoAngle = -0.10 - prog * 0.18;             // arches back as lock tightens
+      pose.headOffset.x = -72;
+      pose.headOffset.y = -22 - prog * 6 + tap * 0.5;    // head pulled UP further
       pose.legL.hipX = 6; pose.legL.kneeX = 34; pose.legL.kneeY = -8; pose.legL.footX = 66; pose.legL.footY = -4;
       pose.legR.hipX = 8; pose.legR.kneeX = 38; pose.legR.kneeY = -4; pose.legR.footX = 70; pose.legR.footY = -2;
       // Both hands claw at attacker's choking forearm (up near neck)
@@ -1204,10 +1455,11 @@ function computePose(f, t) {
       pose.armFront.handX  = -72 - flail * 0.8; pose.armFront.handY  = -20 - tap;
     } else if (subKind === 'guillotine') {
       // GUILLOTINE defense: head YANKED down under attacker's armpit, torso
-      // curled forward. Hands try to peel the choking arm off.
+      // curled forward. Hands try to peel the choking arm off. Curl deepens
+      // and head bends down further as the choke closes (progress).
       pose.pelvis.y = -40;                        // kneeling / on all fours
-      pose.torsoAngle = -0.65;                    // torso curled forward
-      pose.headOffset.x = -28; pose.headOffset.y = -8 + tap;
+      pose.torsoAngle = -0.65 - prog * 0.18;      // curls deeper as choke tightens
+      pose.headOffset.x = -28; pose.headOffset.y = -8 + prog * 6 + tap;
       pose.legL.hipX = 0;  pose.legL.hipY = -36; pose.legL.kneeX = -6; pose.legL.kneeY = -14; pose.legL.footX = -2; pose.legL.footY = 0;
       pose.legR.hipX = 6;  pose.legR.hipY = -36; pose.legR.kneeX = 12; pose.legR.kneeY = -12; pose.legR.footX = 14; pose.legR.footY = 0;
       // Both hands claw up at the choking arm (which is overhead from defender's view)
@@ -1234,6 +1486,39 @@ function computePose(f, t) {
       pose.armBack.shoulderX = -12;  pose.armBack.shoulderY = -64;
       pose.armBack.elbowX = 6 + flail * 0.4;  pose.armBack.elbowY = -46;
       pose.armBack.handX  = 28 + flail * 0.6; pose.armBack.handY  = -24 - tap;
+    } else if (subKind === 'darce' || subKind === 'anaconda') {
+      // D'ARCE / ANACONDA defense: defender bent over hard at the waist,
+      // head being squeezed inside attacker's wrap. Hands paw at the
+      // choking arm in panic. As progress climbs the spine curls harder.
+      pose.pelvis.x = -8; pose.pelvis.y = -38 - prog * 6;
+      pose.torsoAngle = -0.95 - prog * 0.20;       // bent way forward
+      pose.headOffset.x = 6 + tap * 0.4;
+      pose.headOffset.y = -22 - prog * 4 + tap * 0.4;
+      pose.legL.hipX = -8; pose.legL.hipY = -34; pose.legL.kneeX = -22; pose.legL.kneeY = -8 + flail * 0.3; pose.legL.footX = -32; pose.legL.footY = 0;
+      pose.legR.hipX =  8; pose.legR.hipY = -34; pose.legR.kneeX =  22; pose.legR.kneeY = -10 - flail * 0.3; pose.legR.footX = 30; pose.legR.footY = 0;
+      pose.armBack.shoulderX = -16;  pose.armBack.elbowX = -2 + flail * 0.4;  pose.armBack.elbowY = -32;
+      pose.armBack.handX  = 12 + flail * 0.6; pose.armBack.handY  = -8 - tap;
+      pose.armFront.shoulderX = 16; pose.armFront.elbowX = 4 - flail * 0.4; pose.armFront.elbowY = -32;
+      pose.armFront.handX  = 18 - flail * 0.6; pose.armFront.handY  = -10 - tap;
+    } else if (subKind === 'kneebar') {
+      // KNEEBAR defense: defender on back, ONE leg captured & extended into
+      // a painful straight line, free leg flailing for sweep / posture, hands
+      // grabbing toward the trapped knee. Hips lift with progress (panic
+      // bridge). Knee hyper-extends visually as progress climbs.
+      pose.pelvis.y = -14 + prog * 6;
+      pose.torsoAngle = 0.05;
+      pose.headOffset.x = -78; pose.headOffset.y = -14;
+      // Trapped leg — RIGHT leg, yanked forward & locked straight out.
+      pose.legR.hipX = 4;  pose.legR.hipY = -10; pose.legR.kneeX = 28; pose.legR.kneeY = -8 - prog * 6; pose.legR.footX = 64; pose.legR.footY = -10 - prog * 8;
+      // Free leg flails (kicks for posture).
+      pose.legL.hipX = 6;  pose.legL.kneeX = 34 + flail * 0.4; pose.legL.kneeY = -22 + flail * 0.3; pose.legL.footX = 60 + flail * 0.6; pose.legL.footY = -28 + flail * 0.5;
+      // Both hands reach for the trapped knee.
+      pose.armBack.shoulderX = -36; pose.armBack.shoulderY = -50;
+      pose.armBack.elbowX = -10 + flail * 0.4;  pose.armBack.elbowY = -42;
+      pose.armBack.handX  = 14 + flail * 0.6; pose.armBack.handY  = -38 + tap * 0.4;
+      pose.armFront.shoulderX = -32; pose.armFront.shoulderY = -54;
+      pose.armFront.elbowX = -6 - flail * 0.4; pose.armFront.elbowY = -46;
+      pose.armFront.handX  = 18 - flail * 0.6; pose.armFront.handY  = -40 + tap * 0.4;
     } else {
       // Generic position-based defense (no specific lock info).
       const pos = f.groundPosition || 'mount';
@@ -1263,6 +1548,24 @@ function computePose(f, t) {
     const phase = af < a.startup ? 'startup' : af < a.startup + a.active ? 'active' : 'recovery';
     const k = phase === 'startup' ? af / a.startup : phase === 'active' ? 1 : 1 - (af - a.startup - a.active) / a.recovery;
     applyAttackPose(pose, a.kind, k, phase, f);
+  }
+  // Independent head-snap (UFC 5-style chin whip) — displaces the head
+  // *additionally* so it reads as a separate impact reaction from the torso.
+  // Decoupled from hitReact so cleanly-landed punches still snap the chin
+  // even when the body has begun to recover.
+  if (f.headSnap > 0) {
+    const localDir = (f.headSnapDir || 1) * (f.facing || 1);
+    pose.headOffset.x -= localDir * f.headSnap * 14;
+    pose.headOffset.y -= f.headSnap * 4;
+  }
+  // Limp animation: a fighter with a crippled lead leg drags the front
+  // foot during walk / idle, with a slight pelvis-drop to one side. This
+  // is purely cosmetic (the engine handles the speed cut).
+  if (f.legCrippled && (f.state === 'idle' || f.state === 'walk' || f.state === 'block')) {
+    const limpPhase = Math.sin((f.animTime || 0) * 0.16);
+    pose.pelvis.y = pose.pelvis.y + 2 + Math.max(0, limpPhase) * 2;
+    pose.legR.kneeY = pose.legR.kneeY + 4;
+    pose.legR.footY = pose.legR.footY + Math.max(0, -limpPhase) * 3;
   }
   return pose;
 }
