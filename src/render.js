@@ -675,26 +675,31 @@ function computePose(f, t) {
     pose.legR.kneeY = -36; pose.legR.footY = -20;
   }
   if (f.state === 'hit') {
-    // UFC 5-style hit-react: head whips AWAY from where the strike came from,
-    // shoulder rocks, weight transfers to the back foot, arms drop briefly
-    // then rise back to guard. Direction is taken from f.hitReactDir which the
-    // engine sets at impact (\u00b11 = strike from left/right of fighter).
-    const k = Math.max(0, Math.min(1, f.stunFrames / 14)); // 1 at impact \u2192 0 at recovery
+    // Dramatic UFC-style hit reaction: head whips AWAY from impact,
+    // shoulders rock, weight loads onto the back leg, arms briefly drop
+    // (defense breaks) then come back to guard. Heavier strikes (more
+    // remaining stunFrames) produce stronger whip/recoil.
+    const k = Math.max(0, Math.min(1, f.stunFrames / 14));   // 1 at impact -> 0 at recovery
     const dir = f.hitReactDir || 1;
-    // In local coords +x = forward (toward facing). Strike from front pushes head -x (back).
-    // hitReactDir is in WORLD coords; convert to local using f.facing.
-    const localDir = dir * (f.facing || 1);
-    const whip = k * 12; // peak whip distance
+    const localDir = dir * (f.facing || 1);                  // +1 = strike from front
+    const whip = k * 18;                                     // bigger head whip
+    // Head whips back AND down on impact, then rises.
     pose.headOffset.x = -2 - localDir * whip;
-    pose.headOffset.y = -148 + 6 * k;
-    // Torso recoils away from impact, weight loads onto back leg.
-    pose.torsoAngle = -localDir * 0.22 * k;
-    pose.pelvis.x = -localDir * 4 * k;
-    // Arms drop a touch (defense breaks for a moment) then come back up.
-    pose.armBack.handY = -120 + 10 * k; pose.armBack.handX = -10 - localDir * 4 * k;
-    pose.armFront.handY = -120 + 10 * k; pose.armFront.handX = 22 - localDir * 4 * k;
-    // Back leg slides slightly to absorb the blow.
-    pose.legL.footX = -22 * bd - localDir * 6 * k;
+    pose.headOffset.y = -150 + 10 * k;
+    // Torso bows away from impact for extra body language.
+    pose.torsoAngle = -localDir * 0.34 * k;
+    pose.pelvis.x = -localDir * 7 * k;
+    pose.pelvis.y = -82 + 4 * k;                              // small dip / stagger
+    // Arms drop momentarily (defense compromised) — fronthand drops more
+    // for a strike from the front. Hands stay roughly at chest level so
+    // they don't reach back up to head.
+    pose.armBack.handY  = -90 - 18 * (1 - k); pose.armBack.handX  = -14 - localDir * 6 * k;
+    pose.armBack.elbowY = -116 + 4 * k;
+    pose.armFront.handY = -88 - 16 * (1 - k); pose.armFront.handX = 18 - localDir * 8 * k;
+    pose.armFront.elbowY = -116 + 4 * k;
+    // Back leg slides further to absorb. Front leg buckles slightly.
+    pose.legL.footX = -22 * bd - localDir * 9 * k;
+    pose.legR.kneeY = -42 + 4 * k;
   }
   if (f.state === 'down') {
     // Lying flat
@@ -794,21 +799,35 @@ function computePose(f, t) {
     pose.armFront.shoulderY = -50; pose.armFront.elbowY = -22; pose.armFront.elbowX = 18; pose.armFront.handY = -4 + pulse * 1; pose.armFront.handX = 24;
   }
   if (f.state === 'clinch') {
-    // Both fighters locked up — wide base, forward lean, arms up in collar-tie / under-hook posture.
-    const pulse = Math.sin(t * 0.25) * 1.2;
-    pose.pelvis.x = 6; pose.pelvis.y = -76 + pulse * 0.5;
-    pose.torsoAngle = 0.12;
-    // Wide base stance
-    pose.legL.footX = -26 * bd; pose.legL.footY = 0; pose.legL.kneeX = -18 * bd; pose.legL.kneeY = -46;
-    pose.legR.footX =  30 * bd; pose.legR.footY = 0; pose.legR.kneeX =  22 * bd; pose.legR.kneeY = -46;
-    // Both arms raised, reaching across the center line toward the opponent.
-    pose.armBack.shoulderX = -24 * bd; pose.armBack.shoulderY = -72 * ht - 82;
-    pose.armBack.elbowX = 4;  pose.armBack.elbowY = -156 + pulse;
-    pose.armBack.handX  = 34; pose.armBack.handY  = -162 + pulse;
-    pose.armFront.shoulderX = 26 * bd; pose.armFront.shoulderY = -72 * ht - 82;
-    pose.armFront.elbowX = 20; pose.armFront.elbowY = -148 + pulse;
-    pose.armFront.handX  = 48; pose.armFront.handY  = -154 + pulse;
-    pose.headOffset.x = 8; pose.headOffset.y = -150 * ht;
+    // Both fighters locked up in MMA clinch — wide athletic base, hips and
+    // head pushed forward into the opponent, one arm up in collar-tie
+    // (gripping back of neck) and the other deep under-hook (around
+    // opponent's shoulder). The whole body tilts forward as if leaning
+    // bodyweight onto the opponent.
+    const pulse = Math.sin(t * 0.18) * 1.5;        // breathing / push-pull
+    const sway  = Math.sin(t * 0.08) * 0.8;        // weight shift between feet
+    pose.pelvis.x = 4 + sway; pose.pelvis.y = -74 + pulse * 0.4;
+    pose.torsoAngle = 0.22;                         // strong forward lean
+    // Wide athletic base — feet planted, knees bent for power & balance.
+    pose.legL.footX = -28 * bd;        pose.legL.footY = 0;
+    pose.legL.kneeX = -20 * bd;        pose.legL.kneeY = -42;
+    pose.legL.hipX  = -10 * bd;        pose.legL.hipY  = -76;
+    pose.legR.footX =  34 * bd;        pose.legR.footY = 0;
+    pose.legR.kneeX =  24 * bd;        pose.legR.kneeY = -42;
+    pose.legR.hipX  =  10 * bd;        pose.legR.hipY  = -76;
+    // BACK arm = collar-tie. Reaches OVER the opponent's shoulder, grabs the
+    // back of the neck. Hand goes far across center line and slightly up.
+    pose.armBack.shoulderX = -22 * bd; pose.armBack.shoulderY = -72 * ht - 76;
+    pose.armBack.elbowX = 18;          pose.armBack.elbowY = -148 + pulse;
+    pose.armBack.handX  = 70 + pulse;  pose.armBack.handY  = -148 + pulse;
+    // FRONT arm = under-hook. Reaches UNDER the opponent's armpit, hand
+    // wraps behind the back. Hand goes deep across at chest level.
+    pose.armFront.shoulderX = 24 * bd; pose.armFront.shoulderY = -72 * ht - 76;
+    pose.armFront.elbowX = 28;         pose.armFront.elbowY = -126 + pulse;
+    pose.armFront.handX  = 78 - pulse; pose.armFront.handY  = -120 + pulse;
+    // Head pushes forward, slightly tilted — chin tucks into opponent's
+    // chest/shoulder for the classic Muay-Thai plumb-clinch posture.
+    pose.headOffset.x = 14; pose.headOffset.y = -148 * ht;
     // Clinch attack overlay (knee / elbow / dirty punch) — animated via f.attack progress
     if (f.attack) {
       const ca = f.attack;
@@ -888,79 +907,161 @@ function computePose(f, t) {
     }
   }
   if (f.state === 'ground_top') {
-    // Kneeling astride opponent (mount). Pelvis elevated, torso upright, arms up for GnP.
-    const pulse = Math.sin(t * 0.22) * 1.3;
-    pose.pelvis.x = 0; pose.pelvis.y = -52 + pulse * 0.6;
-    pose.torsoAngle = -0.05;
-    // Knees planted on either side (mount position)
-    pose.legL.hipX = -10 * bd; pose.legL.hipY = -48; pose.legL.kneeX = -24 * bd; pose.legL.kneeY = -20; pose.legL.footX = -14 * bd; pose.legL.footY = 0;
-    pose.legR.hipX =  10 * bd; pose.legR.hipY = -48; pose.legR.kneeX =  24 * bd; pose.legR.kneeY = -20; pose.legR.footX =  14 * bd; pose.legR.footY = 0;
-    // Arms raised high, ready to rain strikes
-    pose.armBack.shoulderX = -20 * bd;  pose.armBack.shoulderY = -100;
-    pose.armBack.elbowX = -12;  pose.armBack.elbowY = -136; pose.armBack.handX = -4;  pose.armBack.handY = -158;
+    // Kneeling astride opponent in mount. Pelvis elevated, torso upright,
+    // arms cocked back at chamber height ready to rain strikes. Subtle
+    // breathing pulse + slight forward lean for "applying pressure" feel.
+    const breath = Math.sin(t * 0.18) * 1.6;
+    const press  = Math.sin(t * 0.10) * 1;            // weight shift onto opponent
+    pose.pelvis.x = press; pose.pelvis.y = -50 + breath * 0.5;
+    pose.torsoAngle = -0.06;
+    // Knees planted wide on either side of opponent's torso (full mount).
+    pose.legL.hipX = -12 * bd; pose.legL.hipY = -46; pose.legL.kneeX = -28 * bd; pose.legL.kneeY = -18; pose.legL.footX = -16 * bd; pose.legL.footY = 0;
+    pose.legR.hipX =  12 * bd; pose.legR.hipY = -46; pose.legR.kneeX =  28 * bd; pose.legR.kneeY = -18; pose.legR.footX =  16 * bd; pose.legR.footY = 0;
+    // Arms cocked back/up (chamber for ground & pound). Front fist higher
+    // than rear — alternating hand chamber for next punch.
+    pose.armBack.shoulderX = -22 * bd;  pose.armBack.shoulderY = -100;
+    pose.armBack.elbowX = -14;  pose.armBack.elbowY = -134 + breath; pose.armBack.handX = -4;  pose.armBack.handY = -156 + breath;
     pose.armFront.shoulderX = 22 * bd;  pose.armFront.shoulderY = -100;
-    pose.armFront.elbowX = 14;  pose.armFront.elbowY = -140; pose.armFront.handX = 22; pose.armFront.handY = -162;
-    pose.headOffset.x = -2; pose.headOffset.y = -130;
-    // Overlay attack animation if mid-GnP strike
+    pose.armFront.elbowX = 16;  pose.armFront.elbowY = -140 + breath; pose.armFront.handX = 24; pose.armFront.handY = -162 + breath;
+    pose.headOffset.x = -2; pose.headOffset.y = -132;
+    // Overlay attack animation if mid-GnP strike. Adds chamber-back, then
+    // explosive downward arc to opponent's head, and slow recovery.
     if (f.attack) {
       const ca = f.attack;
-      const peak = f.attackFrame < ca.startup ? (f.attackFrame / ca.startup) :
-                    f.attackFrame < ca.startup + ca.active ? 1 :
-                    1 - (f.attackFrame - ca.startup - ca.active) / ca.recovery;
-      const ease = Math.sin(peak * Math.PI);
+      const total = ca.startup + ca.active + ca.recovery;
+      const af2 = f.attackFrame;
+      const cham = af2 < ca.startup ? (af2 / ca.startup) : 1;
+      const drop = af2 < ca.startup ? 0
+                  : af2 < ca.startup + ca.active ? 1
+                  : 1 - (af2 - ca.startup - ca.active) / ca.recovery;
+      const easeDrop = drop * drop;          // accelerating downward strike
+      void total;
       if (ca.kind === 'ground_punch') {
-        pose.armFront.handX = 22 + ease * 18;
-        pose.armFront.handY = -162 + ease * 90;
-        pose.armFront.elbowX = 14 + ease * 10;
-        pose.armFront.elbowY = -140 + ease * 50;
+        // Chamber: arm pulls UP and BACK. Drop: fist arcs DOWN fast onto
+        // the opponent's head. Body leans forward into the strike.
+        pose.armFront.handX = 24 + cham * 6 + easeDrop * 30;
+        pose.armFront.handY = -162 - cham * 16 + easeDrop * 110;
+        pose.armFront.elbowX = 16 + cham * 4 + easeDrop * 16;
+        pose.armFront.elbowY = -140 - cham * 8 + easeDrop * 60;
+        pose.torsoAngle = -0.06 + easeDrop * 0.18;
+        pose.pelvis.y = -50 + easeDrop * 6;
       } else if (ca.kind === 'ground_elbow') {
-        pose.armFront.handX = 12 + ease * 18;
-        pose.armFront.handY = -170 + ease * 110;
-        pose.armFront.elbowX = 8 + ease * 14;
-        pose.armFront.elbowY = -150 + ease * 30;
+        // Elbow strike: more vertical drop, less arm extension.
+        pose.armFront.handX = 14 + easeDrop * 22;
+        pose.armFront.handY = -170 - cham * 8 + easeDrop * 130;
+        pose.armFront.elbowX = 10 + easeDrop * 18;
+        pose.armFront.elbowY = -150 - cham * 6 + easeDrop * 60;
+        pose.torsoAngle = -0.06 + easeDrop * 0.24;
+        pose.pelvis.y = -50 + easeDrop * 8;
       }
     }
   }
   if (f.state === 'sub_offense') {
-    // Locking in a submission. During the lock-in window we animate from
-    // "reaching out" to "fully wrapped" so the wrap-up is visible. After lock-in
-    // the pose holds steady at the wrapped position with a subtle pull pulse.
+    // Locking in a submission. We animate the WRAP-UP from "reaching out"
+    // toward "fully cinched" then hold a tight, distinctive pose for each
+    // submission type, with a subtle pulling pulse to convey isometric tension.
     const lockFrame = f.subLockFrame || 0;
     const lockTotal = f.subLockTotal || 0;
     const lockK = lockTotal > 0 ? Math.max(0, Math.min(1, lockFrame / lockTotal)) : 1;
     const reach = 1 - lockK; // 1 at start of lock-in, 0 once fully wrapped
     const subKind = f.subLockKind;
-    pose.pelvis.x = 0; pose.pelvis.y = -56 - reach * 6;
-    pose.torsoAngle = 0.24 + reach * 0.1;
-    pose.legL.kneeX = -22 * bd; pose.legL.kneeY = -22; pose.legL.footX = -14 * bd; pose.legL.footY = 0;
-    pose.legR.kneeX =  22 * bd; pose.legR.kneeY = -22; pose.legR.footX =  14 * bd; pose.legR.footY = 0;
-    if (subKind === 'armbar' || subKind === 'kimura') {
-      // Arms reach out, then snap back into a tight cross-body lock on the limb.
-      pose.armBack.shoulderX = -16 * bd; pose.armBack.shoulderY = -96;
-      pose.armBack.elbowX = 14 + reach * 16; pose.armBack.elbowY = -110 - reach * 8;
-      pose.armBack.handX = 30 + reach * 28; pose.armBack.handY = -118 - reach * 18;
-      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -96;
-      pose.armFront.elbowX = 22 + reach * 14; pose.armFront.elbowY = -108 - reach * 6;
-      pose.armFront.handX = 32 + reach * 24; pose.armFront.handY = -116 - reach * 14;
-    } else if (subKind === 'rear_naked' || subKind === 'guillotine') {
-      // Choke — arms wrap around the neck/throat, hands clinched together.
-      pose.armBack.shoulderX = -14 * bd; pose.armBack.shoulderY = -98;
-      pose.armBack.elbowX = 6; pose.armBack.elbowY = -130 - reach * 4;
-      pose.armBack.handX = 22; pose.armBack.handY = -132 - reach * 8;
-      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -98;
-      pose.armFront.elbowX = 18; pose.armFront.elbowY = -126 - reach * 4;
-      pose.armFront.handX = 26; pose.armFront.handY = -130 - reach * 8;
+    const pull  = Math.sin(t * 0.32) * 2;            // hard isometric pulling
+    const cinch = lockTotal === 0 ? pull : 0;        // only after lock-in is set
+
+    if (subKind === 'armbar') {
+      // ARMBAR: attacker is on his BACK with hips up against opponent's
+      // shoulder. Both legs clamped over opponent's chest. Both hands
+      // gripping opponent's wrist and pulling it down past the hip.
+      // Torso lies BACK toward the floor (big negative angle).
+      pose.pelvis.x = 0; pose.pelvis.y = -22 - reach * 4;
+      pose.torsoAngle = -1.25;                  // ~ -72° — lying back
+      // Legs SCISSORED VERTICALLY on opponent's chest — knees high.
+      pose.legL.hipX = -8; pose.legL.hipY = -22; pose.legL.kneeX = -12; pose.legL.kneeY = -82; pose.legL.footX = -8; pose.legL.footY = -120;
+      pose.legR.hipX =  8; pose.legR.hipY = -22; pose.legR.kneeX =  20; pose.legR.kneeY = -76; pose.legR.footX =  44; pose.legR.footY = -90;
+      // Both hands grip the opponent's wrist (between the attacker's thighs)
+      // and pull DOWN toward the hip. Position both hands close together.
+      pose.armBack.shoulderX = -28; pose.armBack.shoulderY = -38;
+      pose.armBack.elbowX = -6 + reach * 14;  pose.armBack.elbowY = -52 - reach * 4;
+      pose.armBack.handX  = 18 + reach * 16 + cinch * 0.4; pose.armBack.handY  = -78 - reach * 8 + cinch * 0.6;
+      pose.armFront.shoulderX = -24; pose.armFront.shoulderY = -42;
+      pose.armFront.elbowX = -2 + reach * 14;  pose.armFront.elbowY = -56 - reach * 4;
+      pose.armFront.handX  = 22 + reach * 16 + cinch * 0.4; pose.armFront.handY  = -82 - reach * 8 + cinch * 0.6;
+      pose.headOffset.x = -28; pose.headOffset.y = -42;
+    } else if (subKind === 'kimura') {
+      // KIMURA: attacker on side controlling opponent's wrist with one hand
+      // and the elbow with the other (figure-four). Body twisted on its
+      // side — torso rolled hard toward the trapped shoulder.
+      pose.pelvis.x = 0; pose.pelvis.y = -32;
+      pose.torsoAngle = 0.95 + reach * 0.05;     // rolled onto side
+      pose.legL.hipX = -10; pose.legL.kneeX = -10; pose.legL.kneeY = -70; pose.legL.footX = 8; pose.legL.footY = -88;
+      pose.legR.hipX =  10; pose.legR.kneeX =  16; pose.legR.kneeY = -52; pose.legR.footX = 30; pose.legR.footY = -50;
+      // Figure-four grip: both hands cinched on opponent's wrist with one
+      // hand wrapping over the attacker's other forearm.
+      pose.armBack.shoulderX = -14; pose.armBack.shoulderY = -80;
+      pose.armBack.elbowX = 24 + reach * 12; pose.armBack.elbowY = -98 - reach * 4;
+      pose.armBack.handX  = 50 + reach * 14 + cinch * 0.4; pose.armBack.handY  = -86 - reach * 6 - cinch * 0.4;
+      pose.armFront.shoulderX = 20; pose.armFront.shoulderY = -80;
+      pose.armFront.elbowX = 30 + reach * 12; pose.armFront.elbowY = -86 - reach * 4;
+      pose.armFront.handX  = 56 + reach * 14 + cinch * 0.4; pose.armFront.handY  = -82 - reach * 6 - cinch * 0.4;
+      pose.headOffset.x = 8; pose.headOffset.y = -118;
+    } else if (subKind === 'rear_naked') {
+      // REAR-NAKED CHOKE: attacker BEHIND opponent with both hooks in.
+      // One arm wraps deep around the throat (bicep slicing the neck); the
+      // other hand cups the back of the head pushing forward.
+      pose.pelvis.x = -6; pose.pelvis.y = -42;
+      pose.torsoAngle = 0.12;
+      // Hooks: legs wrap around opponent's hips from behind.
+      pose.legL.hipX = -12; pose.legL.hipY = -36; pose.legL.kneeX =  12; pose.legL.kneeY = -42; pose.legL.footX = 38; pose.legL.footY = -22;
+      pose.legR.hipX =  12; pose.legR.hipY = -38; pose.legR.kneeX =  32; pose.legR.kneeY = -38; pose.legR.footX = 50; pose.legR.footY = -14;
+      // Choking arm: bicep across throat, hand grips opposite bicep.
+      pose.armBack.shoulderX = -16; pose.armBack.shoulderY = -100;
+      pose.armBack.elbowX = 24 + reach * 18; pose.armBack.elbowY = -110;
+      pose.armBack.handX  = 56 + reach * 18 - cinch * 0.5; pose.armBack.handY  = -94 + cinch * 0.3;
+      // Top hand: pushes the back of opponent's head forward into the
+      // choke. Wraps high above the choking elbow.
+      pose.armFront.shoulderX = 14; pose.armFront.shoulderY = -100;
+      pose.armFront.elbowX = 30 + reach * 14; pose.armFront.elbowY = -120;
+      pose.armFront.handX  = 50 + reach * 14 - cinch * 0.4; pose.armFront.handY  = -132 + cinch * 0.4;
+      pose.headOffset.x = -10; pose.headOffset.y = -130;
+    } else if (subKind === 'guillotine') {
+      // GUILLOTINE: attacker is upright/seated, opponent's head pulled
+      // DOWN under attacker's armpit. One arm wraps the neck, other hand
+      // grips that wrist and pulls UP. Knees come up high to lock
+      // opponent's body in (closed guard) — torso curls forward HARD as
+      // the choke is finished.
+      pose.pelvis.x = 0; pose.pelvis.y = -56;
+      pose.torsoAngle = 0.55 - reach * 0.10;     // curls forward into the choke
+      // Closed guard around opponent's torso — legs wrap.
+      pose.legL.hipX = -10; pose.legL.hipY = -50; pose.legL.kneeX = 18; pose.legL.kneeY = -70; pose.legL.footX = 50; pose.legL.footY = -52;
+      pose.legR.hipX =  10; pose.legR.hipY = -50; pose.legR.kneeX = 24; pose.legR.kneeY = -64; pose.legR.footX = 56; pose.legR.footY = -46;
+      // Guillotine arms: front arm crooks the neck, back hand grips wrist.
+      pose.armFront.shoulderX = 22; pose.armFront.shoulderY = -110;
+      pose.armFront.elbowX = 38 + reach * 12; pose.armFront.elbowY = -98;
+      pose.armFront.handX  = 18 + reach * 12 - cinch * 0.5; pose.armFront.handY  = -78 - cinch * 0.4;
+      pose.armBack.shoulderX = -18; pose.armBack.shoulderY = -110;
+      pose.armBack.elbowX = 6 + reach * 10; pose.armBack.elbowY = -100;
+      pose.armBack.handX  = 22 + reach * 12 - cinch * 0.5; pose.armBack.handY  = -84 - cinch * 0.4;
+      pose.headOffset.x = 4; pose.headOffset.y = -136;
     } else {
-      // Triangle and others — default tight wrap with pull pulse.
-      const pulse = lockTotal === 0 ? Math.sin((f.animTime || 0) * 0.25) * 1.5 : 0;
-      pose.armBack.shoulderX = -16 * bd; pose.armBack.shoulderY = -96;
-      pose.armBack.elbowX = 10; pose.armBack.elbowY = -128 + pulse;
-      pose.armBack.handX = 28 + reach * 14; pose.armBack.handY = -128 - reach * 10;
-      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -96;
-      pose.armFront.elbowX = 24; pose.armFront.elbowY = -124 + pulse;
-      pose.armFront.handX = 32 + reach * 14; pose.armFront.handY = -126 - reach * 10;
+      // TRIANGLE (and any other): figure-four with the LEGS around
+      // opponent's neck and arm. Attacker on back, hips up, one leg
+      // crossed over its own ankle locking the choke. Torso lies FLAT
+      // on the canvas as legs scissor up.
+      pose.pelvis.x = 0; pose.pelvis.y = -22;
+      pose.torsoAngle = -1.35;                   // ~ -77° — flat on back
+      // Triangle leg lock — one leg up & across, ankle tucked behind
+      // the other knee.
+      pose.legL.hipX = -10; pose.legL.hipY = -22; pose.legL.kneeX =  10; pose.legL.kneeY = -84; pose.legL.footX = 38; pose.legL.footY = -78;
+      pose.legR.hipX =  10; pose.legR.hipY = -22; pose.legR.kneeX = -14 + reach * 14; pose.legR.kneeY = -88; pose.legR.footX = 18 + reach * 12; pose.legR.footY = -66;
+      // One hand grips the trapped arm and pulls down, other braces.
+      pose.armBack.shoulderX = -28; pose.armBack.shoulderY = -38;
+      pose.armBack.elbowX = 4 + reach * 12; pose.armBack.elbowY = -56;
+      pose.armBack.handX  = 30 + reach * 14 + cinch * 0.4; pose.armBack.handY  = -78 + cinch * 0.4;
+      pose.armFront.shoulderX = -24; pose.armFront.shoulderY = -42;
+      pose.armFront.elbowX = -8; pose.armFront.elbowY = -56;
+      pose.armFront.handX  = -30; pose.armFront.handY  = -52;
+      pose.headOffset.x = -28; pose.headOffset.y = -42;
     }
-    pose.headOffset.x = 6; pose.headOffset.y = -130;
   }
   if (f.state === 'sub_defense') {
     // Position-aware sub defense: same layout family as ground_bottom but with
@@ -1006,66 +1107,86 @@ function applyAttackPose(pose, kind, k, phase, f) {
   // `k` already represents 0..1..0 progression across the whole move. Use easing for snap.
   const easeOut = 1 - (1 - k) * (1 - k);   // fast-out for snap on extension
   const easeIn = k * k;                     // accelerating for chamber
+  const bd = (f && f.data && f.data.build) || 1.0;
+  const ht = (f && f.data && f.data.height) || 1.0;
+  void ht;
   switch (kind) {
     case 'jab': {
-      // Lead-hand jab: snap-extend front fist, rear hand glued to chin,
-      // small hip drive forward, lead foot stamps an extra inch.
-      const reach = easeOut;
-      pose.armFront.elbowX = 18 + reach * 40;
-      pose.armFront.elbowY = -132 - reach * 4;
-      pose.armFront.handX = 26 + reach * 74;
-      pose.armFront.handY = -134 - reach * 4;
-      pose.armBack.handX = 6; pose.armBack.handY = -150;
-      pose.armBack.elbowX = -6; pose.armBack.elbowY = -130;
-      pose.torsoAngle = 0.10 * reach;
+      // Lead-hand jab: snap-extend front fist, rear hand glued to chin guarding
+      // the face, small hip drive forward, lead foot stamps. Recovery has the
+      // arm pulling back along the same line (no overshoot — jabs snap back
+      // to guard fastest of all strikes).
+      const reach = phase === 'recovery' ? k * k : easeOut; // sharp snap, soft return
+      const overshoot = phase === 'active' ? Math.sin(k * Math.PI) * 0.08 : 0;
+      const r = reach + overshoot;
+      pose.armFront.elbowX = 18 + r * 38;
+      pose.armFront.elbowY = -132 - r * 4;
+      pose.armFront.handX = 26 + r * 78;
+      pose.armFront.handY = -134 - r * 4;
+      // Rear hand stays glued to chin in proper boxing form.
+      pose.armBack.handX = 6; pose.armBack.handY = -148;
+      pose.armBack.elbowX = -10; pose.armBack.elbowY = -126;
+      pose.torsoAngle = 0.12 * reach;
       pose.pelvis.x = reach * 4;
-      pose.legR.footX = 28 * 0.86 + reach * 8;  // lead foot stamps forward
-      pose.legL.footY = -reach * 2;             // back foot rises slightly on toe
-      pose.headOffset.x = -2 + reach * 3;
+      pose.legR.footX = 28 * 0.86 + reach * 10;  // lead foot stamps forward
+      pose.legL.footY = -reach * 3;              // back foot rises on toe
+      pose.headOffset.x = -2 + reach * 4;
+      pose.headOffset.y = -152 - reach * 2;     // slight head tuck behind shoulder
       break;
     }
     case 'cross': {
-      // Rear-hand cross: HUGE hip + shoulder rotation, rear foot pivots on the
-      // toe (heel rotates upward), lead hand glued to chin, head moves with
-      // the rotation. The whole body rotates BEHIND the punch.
-      const reach = easeOut;
-      pose.armBack.elbowX = -2 + reach * 36;
+      // Rear-hand cross: HUGE hip + shoulder rotation. Rear foot pivots on the
+      // toe (heel rotates upward), lead hand glued to chin, the whole body
+      // rotates BEHIND the punch. Has slight follow-through at peak (the
+      // rear shoulder continues past the strike line) then a heavy recovery
+      // back to guard.
+      const overshoot = phase === 'active' ? Math.sin(k * Math.PI) * 0.12 : 0;
+      const reach = easeOut + overshoot;
+      pose.armBack.elbowX = -2 + reach * 38;
       pose.armBack.elbowY = -134 - reach * 4;
-      pose.armBack.handX = 0 + reach * 100;
-      pose.armBack.handY = -134 - reach * 4;
-      pose.armFront.handX = 14; pose.armFront.handY = -150;
-      pose.armFront.elbowX = 16; pose.armFront.elbowY = -136;
-      pose.torsoAngle = -0.36 * reach;
-      pose.pelvis.x = reach * 7;
-      pose.headOffset.x = -2 + reach * 8;
-      // Rear foot pivots: heel rotates up (footY rises), knee twists in.
-      pose.legL.footY -= reach * 10;
-      pose.legL.kneeX = -14 * 0.86 + reach * 5;
-      pose.legL.kneeY = -42 - reach * 4;
-      // Lead leg straightens slightly to brace.
-      pose.legR.footX = 24 * 0.86 + reach * 4;
+      pose.armBack.handX = 0 + reach * 104;
+      pose.armBack.handY = -134 - reach * 6;
+      // Lead hand pulls back to chin to guard.
+      pose.armFront.handX = 14 - reach * 4; pose.armFront.handY = -148 - reach * 2;
+      pose.armFront.elbowX = 14; pose.armFront.elbowY = -132;
+      pose.torsoAngle = -0.42 * reach;
+      pose.pelvis.x = reach * 8;
+      pose.headOffset.x = -2 + reach * 10;
+      pose.headOffset.y = -152 + reach * 2;
+      // Rear foot pivots: heel rotates up, knee twists IN toward target line.
+      pose.legL.footY -= reach * 14;
+      pose.legL.footX = -20 * bd + reach * 8;
+      pose.legL.kneeX = -14 * bd + reach * 8;
+      pose.legL.kneeY = -42 - reach * 6;
+      // Lead leg straightens & plants firmly to absorb rotation.
+      pose.legR.footX = 24 * bd + reach * 6;
+      pose.legR.kneeY = -42 + reach * 2;
       break;
     }
     case 'uppercut': {
-      // Uppercut = explosive level change. Dip deeply during chamber (knees
-      // bend, hips drop), then explode upward with the rear fist arcing from
-      // hip to chin. Body rotates and rises on extension.
-      const dip = phase === 'startup' ? easeIn : 1 - easeOut;
+      // Uppercut = explosive level change. Dip DEEPLY during chamber (knees
+      // bend, hips drop, rear fist drops to hip), then explode upward with
+      // the rear fist arcing from hip → chin → above-head. Body rotates &
+      // rises violently on extension. Recovery: body settles, fist drops
+      // back to guard.
+      const dip = phase === 'startup' ? easeIn : (phase === 'active' ? 1 : 1 - easeOut);
       const rise = phase === 'startup' ? 0 : easeOut;
-      pose.pelvis.y = -82 + dip * 10 - rise * 16;
-      pose.torsoAngle = -0.16 * rise + 0.10 * dip;
-      // Knees bend deeply during the dip
-      pose.legR.kneeY = -42 + dip * 14 - rise * 4;
-      pose.legL.kneeY = -42 + dip * 14 - rise * 4;
-      // Rear fist arcs from low/back to chin level
-      pose.armBack.elbowX = -4 + rise * 22;
-      pose.armBack.elbowY = -116 - rise * 28;
-      pose.armBack.handX = 6 + rise * 40;
-      pose.armBack.handY = -106 - rise * 60;
+      pose.pelvis.y = -82 + dip * 12 - rise * 22;
+      pose.torsoAngle = -0.20 * rise + 0.14 * dip;
+      // Knees bend deeply during the dip, then drive up
+      pose.legR.kneeY = -42 + dip * 16 - rise * 6;
+      pose.legL.kneeY = -42 + dip * 16 - rise * 6;
+      // Rear fist: starts at hip, arcs up through chin to above shoulder.
+      pose.armBack.elbowX = -4 + rise * 24;
+      pose.armBack.elbowY = -100 + dip * 14 - rise * 38;
+      pose.armBack.handX = 4 + rise * 48;
+      pose.armBack.handY = -88 + dip * 18 - rise * 78;
+      // Lead hand stays at chin guarding
       pose.armFront.handX = 16; pose.armFront.handY = -150;
       pose.armFront.elbowX = 14; pose.armFront.elbowY = -132;
-      // Head rises with body, tilts back slightly
-      pose.headOffset.y = -152 * ht - rise * 8;
+      // Head rises with body, tilts back as the fist drives up past chin
+      pose.headOffset.y = -152 * ht + dip * 4 - rise * 12;
+      pose.headOffset.x = -2 + rise * 4;
       break;
     }
     case 'kick': {
