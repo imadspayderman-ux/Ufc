@@ -234,19 +234,14 @@ export class Renderer {
     drawLeg(ctx, pose.legR, p, bd);
     drawLeg(ctx, pose.legL, p, bd);
 
-    // pelvis / FIGHT SHORTS — UFC-style with waistband, logo, side stripe
+    // pelvis / FIGHT SHORTS — silhouette black body with a single thin
+    // signature-colored waistband stripe so each fighter is identifiable.
     ctx.save();
     ctx.translate(pose.pelvis.x, pose.pelvis.y);
-    const trunks = p.trunks;
-    const trunksDark = shadeColor(trunks, -0.3);
-    const trunksLight = shadeColor(trunks, 0.18);
     const accent = p.accent || '#ffd34a';
 
-    // Main shorts body with a subtle vertical gradient
-    const sg = ctx.createLinearGradient(0, -4, 0, 34);
-    sg.addColorStop(0, trunksLight);
-    sg.addColorStop(1, trunksDark);
-    ctx.fillStyle = sg;
+    // shorts silhouette
+    ctx.fillStyle = '#050505';
     ctx.beginPath();
     ctx.moveTo(-28 * bd, -6);
     ctx.lineTo(-30 * bd, 28);
@@ -259,46 +254,9 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
 
-    // Side stripe (accent color, both sides)
+    // Single signature-color waistband (the fighter's unique color)
     ctx.fillStyle = accent;
-    ctx.fillRect(-28 * bd, 4, 3, 24);
-    ctx.fillRect(25 * bd, 4, 3, 24);
-    // Secondary contrast stripe
-    ctx.fillStyle = p.shorts2 || '#0f0f0f';
-    ctx.fillRect(-25 * bd, 4, 1.5, 24);
-    ctx.fillRect(23 * bd, 4, 1.5, 24);
-
-    // Logo plate (fake brand badge in center-front)
-    ctx.fillStyle = withAlpha(accent, 0.9);
-    ctx.beginPath();
-    ctx.ellipse(0, 12, 10 * bd, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#0a0a0a';
-    ctx.font = 'bold 7px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('UFN', 0, 13);
-
-    // WAISTBAND — thick belt with fighter accent trim
-    ctx.fillStyle = '#0a0a0a';
-    ctx.fillRect(-28 * bd, -10, 56 * bd, 8);
-    ctx.fillStyle = accent;
-    ctx.fillRect(-28 * bd, -10, 56 * bd, 2);
-    ctx.fillStyle = shadeColor(accent, 0.2);
-    ctx.fillRect(-28 * bd, -9, 56 * bd, 1);
-    // Name tag on waistband (simple gold rectangle)
-    ctx.fillStyle = accent;
-    ctx.fillRect(-10, -8, 20, 4);
-    ctx.fillStyle = '#0a0a0a';
-    ctx.font = 'bold 5px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(((f.data && (f.data.shortName || f.data.name)) || '').toUpperCase().slice(0, 6), 0, -5);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-
-    // Inseam shadow (cleft between thighs)
-    ctx.fillStyle = withAlpha(trunksDark, 0.6);
-    ctx.fillRect(-1, 22, 2, 12);
+    ctx.fillRect(-28 * bd, -8, 56 * bd, 3);
 
     ctx.restore();
 
@@ -1143,118 +1101,66 @@ function applyAttackPose(pose, kind, k, phase, f) {
 }
 
 function drawLeg(ctx, leg, p, bd) {
-  const skin = p.skin;
-  const shadow = shadeColor(skin, -0.22);
-  const hilite = shadeColor(skin, 0.18);
+  // Pure silhouette leg — solid black thigh + shin + foot. No skin shading,
+  // no ankle tape (would break the silhouette aesthetic).
+  const body = p.body || p.skin || '#070707';
 
   ctx.save();
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = body;
 
-  // THIGH (quadriceps) — wider, with shadow side for definition
-  ctx.strokeStyle = skin;
+  // THIGH
   ctx.lineWidth = 22 * bd;
   ctx.beginPath();
   ctx.moveTo(leg.hipX, leg.hipY);
   ctx.lineTo(leg.kneeX, leg.kneeY);
   ctx.stroke();
-  // inner shadow stroke (slightly offset)
-  ctx.strokeStyle = shadow;
-  ctx.lineWidth = 8 * bd;
-  ctx.beginPath();
-  ctx.moveTo(leg.hipX - 4, leg.hipY + 2);
-  ctx.lineTo(leg.kneeX - 3, leg.kneeY - 2);
-  ctx.stroke();
-  // highlight stroke
-  ctx.strokeStyle = hilite;
-  ctx.lineWidth = 4 * bd;
-  ctx.beginPath();
-  ctx.moveTo(leg.hipX + 5, leg.hipY + 2);
-  ctx.lineTo(leg.kneeX + 4, leg.kneeY - 4);
-  ctx.stroke();
 
-  // KNEE (slightly larger joint cap)
-  ctx.fillStyle = shadeColor(skin, -0.08);
-  ctx.beginPath();
-  ctx.arc(leg.kneeX, leg.kneeY, 9 * bd, 0, Math.PI * 2);
-  ctx.fill();
-
-  // SHIN (calf) — tapered
-  ctx.strokeStyle = skin;
+  // SHIN — slightly tapered
   ctx.lineWidth = 16 * bd;
   ctx.beginPath();
   ctx.moveTo(leg.kneeX, leg.kneeY);
   ctx.lineTo(leg.footX, leg.footY);
   ctx.stroke();
-  // calf muscle highlight
-  ctx.strokeStyle = hilite;
-  ctx.lineWidth = 4 * bd;
-  ctx.beginPath();
-  ctx.moveTo(leg.kneeX + 4, leg.kneeY + 6);
-  ctx.lineTo(leg.footX + 3, leg.footY - 6);
-  ctx.stroke();
-  // shadow on back of calf
-  ctx.strokeStyle = shadow;
-  ctx.lineWidth = 3 * bd;
-  ctx.beginPath();
-  ctx.moveTo(leg.kneeX - 4, leg.kneeY + 6);
-  ctx.lineTo(leg.footX - 4, leg.footY - 6);
-  ctx.stroke();
 
-  // ANKLE WRAP (athletic tape, white)
-  ctx.strokeStyle = '#ececec';
-  ctx.lineWidth = 4 * bd;
-  ctx.lineCap = 'butt';
-  for (let i = 0; i < 3; i++) {
-    const tY = leg.footY - 4 + i * 3;
-    ctx.beginPath();
-    ctx.moveTo(leg.footX - 8, tY);
-    ctx.lineTo(leg.footX + 8, tY);
-    ctx.stroke();
-  }
+  // KNEE blend (filled circle to soften the joint)
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.arc(leg.kneeX, leg.kneeY, 10 * bd, 0, Math.PI * 2);
+  ctx.fill();
 
-  // FOOT (barefoot, skin-toned)
-  ctx.fillStyle = skin;
+  // FOOT
   ctx.beginPath();
-  ctx.ellipse(leg.footX + 6, leg.footY - 2, 15, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(leg.footX + 5, leg.footY - 1, 14, 5, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = shadow;
-  ctx.beginPath();
-  ctx.ellipse(leg.footX + 6, leg.footY + 1, 15, 2, 0, 0, Math.PI * 2);
-  ctx.fill();
+
   ctx.restore();
 }
 
 function drawTorso(ctx, pose, p, bd, ht, data) {
-  const skin = p.skin;
-  const shadow = shadeColor(skin, -0.20);
-  const deepShadow = shadeColor(skin, -0.34);
-  const hilite = shadeColor(skin, 0.14);
+  // Pure silhouette torso — single solid black body shape, no muscle shading,
+  // no belly bulge, no sports-bra detail. The fighter's identity comes from
+  // hair + signature glove color, not from torso markings.
+  const body = p.body || p.skin || '#070707';
 
-  const muscle = data && typeof data.muscle === 'number' ? data.muscle : 0.75;
-  const belly = data && typeof data.belly === 'number' ? data.belly : 0;
-  const female = data && data.sex === 'f';
-
-  // Base silhouette dimensions (natural proportions, not exaggerated)
-  // Shoulder width scales with build; waist stays narrower but proportionally.
-  const shoulderW = female ? 26 * bd : 30 * bd;
-  const waistW = female ? 22 * bd : 22 * bd;
+  const shoulderW = 30 * bd;
+  const waistW = 22 * bd;
   const neckOffsetY = -72 * ht;
   const shoulderY = -68 * ht;
-  const chestY = -52 * ht;
   const waistY = 0;
 
   ctx.save();
   ctx.translate(pose.pelvis.x, pose.pelvis.y);
   ctx.rotate(pose.torsoAngle);
 
-  // TORSO BASE — softer V-taper with belly bulge if applicable
-  ctx.fillStyle = skin;
+  // Single solid silhouette body shape (V-taper from waist to shoulders).
+  ctx.fillStyle = body;
   ctx.beginPath();
   ctx.moveTo(-waistW, waistY);
-  // left flank
   ctx.bezierCurveTo(
-    -(waistW + belly * 8), -14,
-    -(shoulderW * 0.95 + belly * 4), -34,
+    -waistW, -14,
+    -shoulderW * 0.95, -34,
     -shoulderW, shoulderY
   );
   ctx.lineTo(-shoulderW * 0.7, neckOffsetY);
@@ -1262,12 +1168,45 @@ function drawTorso(ctx, pose, p, bd, ht, data) {
   ctx.lineTo(5, neckOffsetY - 2);
   ctx.lineTo(shoulderW * 0.7, neckOffsetY);
   ctx.lineTo(shoulderW, shoulderY);
-  // right flank
   ctx.bezierCurveTo(
-    shoulderW * 0.95 + belly * 4, -34,
-    waistW + belly * 8, -14,
+    shoulderW * 0.95, -34,
+    waistW, -14,
     waistW, waistY
   );
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function _drawTorsoLegacy_unused(ctx, pose, p, bd, ht, data) {
+  // legacy detailed torso (skin/muscle/female chest/etc) — replaced by silhouette.
+  const skin = p.skin;
+  const shadow = shadeColor(skin, -0.20);
+  const deepShadow = shadeColor(skin, -0.34);
+  const hilite = shadeColor(skin, 0.14);
+  const muscle = data && typeof data.muscle === 'number' ? data.muscle : 0.75;
+  const belly = data && typeof data.belly === 'number' ? data.belly : 0;
+  const female = data && data.sex === 'f';
+  const shoulderW = female ? 26 * bd : 30 * bd;
+  const waistW = female ? 22 * bd : 22 * bd;
+  const neckOffsetY = -72 * ht;
+  const shoulderY = -68 * ht;
+  const chestY = -52 * ht;
+  const waistY = 0;
+  ctx.save();
+  ctx.translate(pose.pelvis.x, pose.pelvis.y);
+  ctx.rotate(pose.torsoAngle);
+  ctx.fillStyle = skin;
+  ctx.beginPath();
+  ctx.moveTo(-waistW, waistY);
+  ctx.bezierCurveTo(-(waistW + belly * 8), -14, -(shoulderW * 0.95 + belly * 4), -34, -shoulderW, shoulderY);
+  ctx.lineTo(-shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(-5, neckOffsetY - 2);
+  ctx.lineTo(5, neckOffsetY - 2);
+  ctx.lineTo(shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(shoulderW, shoulderY);
+  ctx.bezierCurveTo(shoulderW * 0.95 + belly * 4, -34, waistW + belly * 8, -14, waistW, waistY);
   ctx.closePath();
   ctx.fill();
 
@@ -1399,146 +1338,101 @@ function drawTorso(ctx, pose, p, bd, ht, data) {
 }
 
 function drawArm(ctx, arm, p, bd, isBack) {
-  const skin = isBack ? shadeColor(p.skin, -0.12) : p.skin;
-  const shadow = shadeColor(skin, -0.22);
-  const hilite = shadeColor(skin, 0.18);
-  const gloveBase = p.gloves;
-  const gloveShadow = shadeColor(gloveBase, -0.28);
-  const gloveHilite = shadeColor(gloveBase, 0.25);
+  // Silhouette arm — solid black upper arm + forearm with a colored glove
+  // (the fighter's signature color) at the hand. Back arm gets a slightly
+  // darker shade so depth is still readable.
+  const body = p.body || p.skin || '#070707';
+  const armColor = isBack ? shadeColor(body, -0.25) : body;
+  const glove = p.gloves || '#ff3a3a';
+  const gloveDark = shadeColor(glove, -0.35);
 
   ctx.save();
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
 
-  // SHOULDER / DELTOID cap
-  ctx.fillStyle = skin;
+  // SHOULDER cap (blends with torso silhouette)
+  ctx.fillStyle = armColor;
   ctx.beginPath();
   ctx.arc(arm.shoulderX, arm.shoulderY, 11 * bd, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = shadow;
-  ctx.beginPath();
-  ctx.arc(arm.shoulderX - 3, arm.shoulderY + 2, 8 * bd, 0, Math.PI * 2);
-  ctx.fill();
 
-  // UPPER ARM (bicep/tricep)
-  ctx.strokeStyle = skin;
+  // UPPER ARM
+  ctx.strokeStyle = armColor;
   ctx.lineWidth = 14 * bd;
   ctx.beginPath();
   ctx.moveTo(arm.shoulderX, arm.shoulderY);
   ctx.lineTo(arm.elbowX, arm.elbowY);
   ctx.stroke();
-  // bicep highlight
-  ctx.strokeStyle = hilite;
-  ctx.lineWidth = 4 * bd;
-  ctx.beginPath();
-  ctx.moveTo(arm.shoulderX + 2, arm.shoulderY + 2);
-  ctx.lineTo(arm.elbowX + 2, arm.elbowY - 2);
-  ctx.stroke();
-  // tricep shadow
-  ctx.strokeStyle = shadow;
-  ctx.lineWidth = 5 * bd;
-  ctx.beginPath();
-  ctx.moveTo(arm.shoulderX - 4, arm.shoulderY + 4);
-  ctx.lineTo(arm.elbowX - 4, arm.elbowY);
-  ctx.stroke();
 
   // ELBOW joint
-  ctx.fillStyle = shadeColor(skin, -0.08);
+  ctx.fillStyle = armColor;
   ctx.beginPath();
   ctx.arc(arm.elbowX, arm.elbowY, 7 * bd, 0, Math.PI * 2);
   ctx.fill();
 
   // FOREARM
-  ctx.strokeStyle = skin;
   ctx.lineWidth = 11 * bd;
   ctx.beginPath();
   ctx.moveTo(arm.elbowX, arm.elbowY);
   ctx.lineTo(arm.handX, arm.handY);
   ctx.stroke();
-  // forearm highlight
-  ctx.strokeStyle = hilite;
-  ctx.lineWidth = 3 * bd;
-  ctx.beginPath();
-  ctx.moveTo(arm.elbowX + 2, arm.elbowY + 2);
-  ctx.lineTo(arm.handX + 2, arm.handY - 1);
-  ctx.stroke();
 
-  // WRIST WRAP (white tape)
+  // GLOVE — fighter's signature color, simple oval boxing-glove shape
   const wristAngle = Math.atan2(arm.handY - arm.elbowY, arm.handX - arm.elbowX);
-  const wx = arm.handX - Math.cos(wristAngle) * 11 * bd;
-  const wy = arm.handY - Math.sin(wristAngle) * 11 * bd;
-  ctx.save();
-  ctx.translate(wx, wy);
-  ctx.rotate(wristAngle);
-  ctx.fillStyle = '#f5f5f5';
-  ctx.fillRect(-5, -6 * bd, 8, 12 * bd);
-  ctx.strokeStyle = '#ccc';
-  ctx.lineWidth = 1;
-  for (let i = -4; i < 4; i += 2) {
-    ctx.beginPath();
-    ctx.moveTo(i, -6 * bd);
-    ctx.lineTo(i + 2, 6 * bd);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // GLOVE — egg-shaped with knuckle bumps and thumb
   ctx.save();
   ctx.translate(arm.handX, arm.handY);
   ctx.rotate(wristAngle);
-  // main body
-  ctx.fillStyle = gloveBase;
-  ctx.beginPath();
-  ctx.ellipse(3, 0, 14 * bd, 11 * bd, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // glove shadow underside
-  ctx.fillStyle = gloveShadow;
-  ctx.beginPath();
-  ctx.ellipse(3, 4, 14 * bd, 5 * bd, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // knuckles (3 small bumps across top)
-  ctx.fillStyle = gloveHilite;
-  for (let k = -6; k <= 10; k += 6) {
-    ctx.beginPath();
-    ctx.arc(k, -4 * bd, 3 * bd, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // thumb
-  ctx.fillStyle = gloveBase;
-  ctx.beginPath();
-  ctx.ellipse(-8, 3, 5 * bd, 4 * bd, 0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = gloveShadow;
-  ctx.beginPath();
-  ctx.ellipse(-8, 5, 5 * bd, 2 * bd, 0.4, 0, Math.PI * 2);
-  ctx.fill();
-  // highlight glint
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.beginPath();
-  ctx.ellipse(-2, -6, 5 * bd, 2 * bd, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // brand stripe
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillRect(-2, 1, 10, 1);
-  ctx.restore();
 
+  // wrist cuff (dark band at the cuff side of the glove)
+  ctx.fillStyle = gloveDark;
+  ctx.beginPath();
+  ctx.ellipse(-9, 0, 5 * bd, 8 * bd, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // main glove body
+  ctx.fillStyle = glove;
+  ctx.beginPath();
+  ctx.ellipse(3, 0, 13 * bd, 11 * bd, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // dark outline so the glove reads against the silhouette
+  ctx.strokeStyle = gloveDark;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  // thumb knot
+  ctx.fillStyle = glove;
+  ctx.beginPath();
+  ctx.ellipse(-7, 4, 5 * bd, 4 * bd, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = gloveDark;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  // soft shine on top
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(-1, -5, 6 * bd, 2 * bd, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
   ctx.restore();
 }
 
 function drawHead(ctx, pose, p, ht, f) {
-  const skin = p.skin;
-  const shadow = shadeColor(skin, -0.22);
-  const deep = shadeColor(skin, -0.38);
-  const hilite = shadeColor(skin, 0.18);
-  const hair = p.hair;
-  const hairShadow = shadeColor(hair, -0.35);
+  // Silhouette head — solid black oval, no facial features. The fighter's
+  // identity comes from the HAIR (style + color) drawn on top.
+  const body = p.body || p.skin || '#070707';
+  const hair = p.hair || '#ffffff';
+  const hairShadow = shadeColor(hair, -0.30);
   const hairHilite = shadeColor(hair, 0.25);
-  const hairStyle = (p.hairStyle || f.id || 'short');
+  const hairStyle = (p.hairStyle || (f && f.data && f.data.hairStyle) || (f && f.hairStyle) || 'short');
 
   ctx.save();
   ctx.translate(pose.headOffset.x, pose.headOffset.y);
 
-  // NECK with trapezius shadow
-  ctx.fillStyle = skin;
+  // NECK
+  ctx.fillStyle = body;
   ctx.beginPath();
   ctx.moveTo(-8, 4);
   ctx.lineTo(-10, 14);
@@ -1546,140 +1440,188 @@ function drawHead(ctx, pose, p, ht, f) {
   ctx.lineTo(8, 4);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = shadow;
-  ctx.fillRect(-10, 12, 20, 3);
 
-  // HEAD — oval with more realistic proportions
-  ctx.fillStyle = skin;
+  // HEAD silhouette
+  ctx.fillStyle = body;
   ctx.beginPath();
   ctx.ellipse(0, 0, 18, 22 * ht, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // JAW shading — darker along bottom sides
-  ctx.fillStyle = withAlpha(shadow, 0.5);
-  ctx.beginPath();
-  ctx.moveTo(-17, 2);
-  ctx.quadraticCurveTo(-12, 16, 0, 18);
-  ctx.quadraticCurveTo(12, 16, 17, 2);
-  ctx.lineTo(14, 10);
-  ctx.quadraticCurveTo(0, 14, -14, 10);
-  ctx.closePath();
-  ctx.fill();
-
-  // CHEEKBONE highlight
-  ctx.fillStyle = withAlpha(hilite, 0.4);
-  ctx.beginPath();
-  ctx.ellipse(-10, 2, 4, 2, -0.3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(10, 2, 4, 2, 0.3, 0, Math.PI * 2);
-  ctx.fill();
-
-  // BROW RIDGE
-  ctx.fillStyle = withAlpha(deep, 0.35);
-  ctx.fillRect(-11, -6, 22, 2);
-
-  // EYEBROWS (darker, thick)
-  ctx.fillStyle = hairShadow;
-  ctx.fillRect(-11, -6, 7, 2);
-  ctx.fillRect(4, -6, 7, 2);
-
-  // EYES — whites + iris + pupil
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.ellipse(6, -2, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(-7, -2, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#2a4a6a';
-  ctx.beginPath(); ctx.arc(6, -2, 1.8, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(-7, -2, 1.8, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#0a0a0a';
-  ctx.beginPath(); ctx.arc(6, -2, 1, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(-7, -2, 1, 0, Math.PI * 2); ctx.fill();
-
-  // NOSE — small triangle with shading
-  ctx.fillStyle = withAlpha(shadow, 0.45);
-  ctx.beginPath();
-  ctx.moveTo(-2, -4);
-  ctx.lineTo(-3, 4);
-  ctx.lineTo(3, 4);
-  ctx.lineTo(2, -4);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = withAlpha(deep, 0.4);
-  ctx.fillRect(-3, 3, 2, 1);
-  ctx.fillRect(1, 3, 2, 1);
-
-  // HAIR — per style
+  // === HAIR (per-fighter unique style + color) ============================
   ctx.fillStyle = hair;
-  if (hairStyle === 'bald' || hairStyle === 'buzz' || f.id === 'boris') {
-    // Buzz/bald cut: just a faint cap
-    ctx.beginPath();
-    ctx.ellipse(0, -10, 17, 9, 0, Math.PI, 0);
-    ctx.fill();
-    ctx.fillStyle = withAlpha(hairShadow, 0.7);
-    ctx.beginPath();
-    ctx.ellipse(0, -8, 17, 4, 0, Math.PI, 0);
-    ctx.fill();
-  } else if (hairStyle === 'mohawk' || f.id === 'jin' || f.id === 'amir') {
-    // Short mohawk / short top
-    ctx.beginPath();
-    ctx.ellipse(0, -12, 17, 10, 0, Math.PI, 0);
-    ctx.fill();
-    ctx.fillStyle = hairHilite;
-    ctx.fillRect(-2, -20, 4, 10);
-  } else if (hairStyle === 'long' || f.id === 'diana' || f.id === 'rafa') {
-    // Long hair — extends down sides
-    ctx.beginPath();
-    ctx.ellipse(0, -10, 19, 13, 0, Math.PI, 0);
-    ctx.fill();
-    ctx.fillRect(-19, -10, 6, 22);
-    ctx.fillRect(13, -10, 6, 22);
-    // ponytail on the back side
-    ctx.beginPath();
-    ctx.ellipse(-16, 2, 4, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    // Default — short swept
-    ctx.beginPath();
-    ctx.ellipse(0, -10, 18, 12, 0, Math.PI, 0);
-    ctx.fill();
-    ctx.fillRect(-18, -12, 5, 10);
-    ctx.fillRect(13, -12, 5, 10);
-    // hair highlight
-    ctx.fillStyle = hairHilite;
-    ctx.beginPath();
-    ctx.ellipse(-4, -18, 8, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
+  switch (hairStyle) {
+    case 'spiky': {
+      // KAI — short hair with sharp upward spikes
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 18, 11, 0, Math.PI, 0);
+      ctx.fill();
+      for (let i = -12; i <= 12; i += 6) {
+        ctx.beginPath();
+        ctx.moveTo(i - 2, -16);
+        ctx.lineTo(i + 1, -26);
+        ctx.lineTo(i + 4, -16);
+        ctx.closePath();
+        ctx.fill();
+      }
+      break;
+    }
+    case 'mohawk': {
+      // TONY — sides shaved, tall mohawk
+      ctx.fillStyle = hairShadow;
+      ctx.beginPath();
+      ctx.ellipse(0, -8, 17, 6, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = hair;
+      ctx.beginPath();
+      ctx.moveTo(-4, -10);
+      ctx.lineTo(-3, -28);
+      ctx.lineTo(0, -32);
+      ctx.lineTo(3, -28);
+      ctx.lineTo(4, -10);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'topknot': {
+      // HIRO — bald-ish top with samurai topknot
+      ctx.fillStyle = hairShadow;
+      ctx.beginPath();
+      ctx.ellipse(0, -8, 16, 5, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = hair;
+      // band
+      ctx.fillRect(-4, -16, 8, 4);
+      // bun
+      ctx.beginPath();
+      ctx.arc(0, -22, 5, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'wild': {
+      // BORIS — bushy wild hair, lots of tufts
+      ctx.beginPath();
+      ctx.ellipse(0, -12, 21, 12, 0, Math.PI, 0);
+      ctx.fill();
+      const tufts = [[-14, -18], [-7, -22], [0, -24], [7, -22], [14, -18]];
+      for (const [x, y] of tufts) {
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // beard hint
+      ctx.beginPath();
+      ctx.ellipse(0, 12, 14, 7, 0, 0, Math.PI);
+      ctx.fill();
+      break;
+    }
+    case 'long_pony': {
+      // RAFA — top hair tied back into a long ponytail
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 19, 12, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillRect(-19, -10, 5, 12);
+      ctx.fillRect(14, -10, 5, 12);
+      // ponytail extending down behind head (back side)
+      ctx.beginPath();
+      ctx.moveTo(-12, -2);
+      ctx.quadraticCurveTo(-22, 8, -18, 24);
+      ctx.lineTo(-13, 24);
+      ctx.quadraticCurveTo(-15, 10, -8, 0);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'crew': {
+      // AMIR — flat-top crew cut
+      ctx.beginPath();
+      ctx.moveTo(-15, -10);
+      ctx.lineTo(-15, -17);
+      ctx.lineTo(15, -17);
+      ctx.lineTo(15, -10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 16, 4, 0, Math.PI, 0);
+      ctx.fill();
+      break;
+    }
+    case 'tall_spike': {
+      // JIN — single tall sweeping spike
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 17, 8, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-6, -16);
+      ctx.lineTo(2, -34);
+      ctx.lineTo(8, -28);
+      ctx.lineTo(8, -16);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'long_flame': {
+      // DIANA — long flowing hair with side wisps
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 20, 13, 0, Math.PI, 0);
+      ctx.fill();
+      // left flow
+      ctx.beginPath();
+      ctx.moveTo(-19, -8);
+      ctx.quadraticCurveTo(-24, 6, -18, 24);
+      ctx.lineTo(-12, 24);
+      ctx.quadraticCurveTo(-15, 6, -12, -8);
+      ctx.closePath();
+      ctx.fill();
+      // right flow
+      ctx.beginPath();
+      ctx.moveTo(19, -8);
+      ctx.quadraticCurveTo(24, 6, 18, 24);
+      ctx.lineTo(12, 24);
+      ctx.quadraticCurveTo(15, 6, 12, -8);
+      ctx.closePath();
+      ctx.fill();
+      // top wisp highlight
+      ctx.fillStyle = hairHilite;
+      ctx.beginPath();
+      ctx.ellipse(-4, -18, 8, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'buzz': {
+      // VIKTOR — buzz cut (thin cap)
+      ctx.beginPath();
+      ctx.ellipse(0, -8, 17, 8, 0, Math.PI, 0);
+      ctx.fill();
+      break;
+    }
+    case 'high_pony': {
+      // ZARA — top hair pulled into a high ponytail
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 17, 11, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillRect(-17, -10, 4, 4);
+      ctx.fillRect(13, -10, 4, 4);
+      // high ponytail arc behind
+      ctx.beginPath();
+      ctx.moveTo(-2, -18);
+      ctx.quadraticCurveTo(-16, -22, -22, -8);
+      ctx.quadraticCurveTo(-26, 6, -20, 18);
+      ctx.lineTo(-14, 16);
+      ctx.quadraticCurveTo(-18, 4, -14, -6);
+      ctx.quadraticCurveTo(-8, -14, 0, -14);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    default: {
+      // generic short swept hair
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 18, 12, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillRect(-18, -12, 5, 10);
+      ctx.fillRect(13, -12, 5, 10);
+    }
   }
-
-  // EAR hint (front side only)
-  ctx.fillStyle = shadow;
-  ctx.beginPath();
-  ctx.ellipse(17, 2, 2, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // MOUTH
-  ctx.fillStyle = '#4a1a18';
-  if (f.state === 'attack') {
-    ctx.beginPath(); ctx.ellipse(1, 9, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
-  } else if (f.state === 'hit' || f.state === 'down') {
-    ctx.beginPath(); ctx.ellipse(1, 9, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-  } else {
-    ctx.fillRect(-3, 9, 8, 1.5);
-  }
-  // Mouthguard accent (visible when mouth open)
-  if (f.state === 'attack' || f.state === 'hit') {
-    ctx.fillStyle = p.accent || '#ffd34a';
-    ctx.fillRect(-3, 10, 8, 1.5);
-  }
-  // Lower lip
-  ctx.fillStyle = withAlpha(shadow, 0.4);
-  ctx.fillRect(-4, 11, 10, 1);
-
-  // Sweat / shine on forehead
-  ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  ctx.beginPath();
-  ctx.ellipse(-3, -8, 5, 2, 0, 0, Math.PI * 2);
-  ctx.fill();
 
   ctx.restore();
 }

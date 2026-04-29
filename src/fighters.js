@@ -214,17 +214,31 @@ export const ROSTER = [
   },
 ];
 
-// === Uniform-body normalization ============================================
-// All fighters share an identical "stickman" silhouette: same height, same
-// build, same skin tone, same glove color, no belly, no sex-specific frame.
-// The only per-fighter visual differences are HAIR color and CLOTHING colors
-// (trunks / accent stripe / secondary stripe). Stat / gameplay differences
+// === Uniform silhouette + per-fighter hair / signature color ===============
+// All fighters share an identical pure-black "stickman" silhouette body —
+// same height, build, skin, no belly, no sex-specific frame. The only
+// per-fighter visual differences are HAIR (style + color) and the fighter's
+// SIGNATURE COLOR (used for gloves + trunks waistband). Stats / gameplay
 // (power, speed, grappling, weight class…) are untouched.
-const UNIFORM_SKIN = '#d4a07a';
-const UNIFORM_GLOVES = '#1a1a1a';
+const SILHOUETTE = '#070707';
 const UNIFORM_HEIGHT = 1.0;
-const UNIFORM_BUILD = 0.86;   // slim-ish stickman frame for everyone
-const UNIFORM_MUSCLE = 0.45;  // low muscle definition
+const UNIFORM_BUILD = 0.86;
+const UNIFORM_MUSCLE = 0.45;
+
+// Per-fighter hair style + hair color + signature glove color.
+// hairStyle is read by render.js drawHead.
+const SIGNATURE = {
+  kai:    { hairStyle: 'spiky',       hair: '#39c8ff', color: '#1862c8' }, // electric blue
+  tony:   { hairStyle: 'mohawk',      hair: '#ff2a2a', color: '#cc1133' }, // crimson
+  hiro:   { hairStyle: 'topknot',     hair: '#f0f0f0', color: '#dddddd' }, // white / pearl
+  boris:  { hairStyle: 'wild',        hair: '#ff8c1a', color: '#ff7a1a' }, // wild orange
+  rafa:   { hairStyle: 'long_pony',   hair: '#23c862', color: '#1a8a3a' }, // jungle green
+  amir:   { hairStyle: 'crew',        hair: '#f5c542', color: '#cc9911' }, // sand gold
+  jin:    { hairStyle: 'tall_spike',  hair: '#ffe040', color: '#ffcc11' }, // lightning yellow
+  diana:  { hairStyle: 'long_flame',  hair: '#ff4480', color: '#ee5522' }, // phoenix pink
+  viktor: { hairStyle: 'buzz',        hair: '#9aa6c8', color: '#3a4a88' }, // steel blue
+  zara:   { hairStyle: 'high_pony',   hair: '#a64bff', color: '#6a2dbb' }, // royal purple
+};
 
 for (const f of ROSTER) {
   f.height = UNIFORM_HEIGHT;
@@ -232,10 +246,19 @@ for (const f of ROSTER) {
   f.muscle = UNIFORM_MUSCLE;
   delete f.belly;
   delete f.sex;
+  const sig = SIGNATURE[f.id] || { hairStyle: 'short', hair: '#ffffff', color: '#ff3a3a' };
+  f.hairStyle = sig.hairStyle;
+  f.color = sig.color;
   f.palette = {
     ...f.palette,
-    skin: UNIFORM_SKIN,
-    gloves: UNIFORM_GLOVES,
+    skin: SILHOUETTE,
+    body: SILHOUETTE,
+    hair: sig.hair,
+    hairStyle: sig.hairStyle,
+    gloves: sig.color,
+    accent: sig.color,
+    trunks: SILHOUETTE,
+    shorts2: SILHOUETTE,
   };
 }
 // ===========================================================================
