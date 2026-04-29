@@ -45,14 +45,38 @@ export const ATTACK_DATA = {
   ground_elbow: { startup: 6,  active: 3, recovery: 10, damage: 10, reach: 0,   height: 'all',  stam: 6,  pushback: 0, meter: 7, height_y: 35,  ground: true },
 };
 
-// Submission catalogue. `escapeBase` = base taps needed to escape (modified by defender stats).
+// Submission catalogue. UFC 5-style two-bar minigame:
+//   - lockBuild: how fast attacker fills the FINISH gauge (per frame baseline)
+//   - escapeGain: how much the defender's ESCAPE gauge moves per timed tap
+//   - decay: how much the attacker's gauge passively decays per frame (defender struggle)
+//   - drainAtk / drainDef: stamina cost per second to attacker / defender while held
+//   - dps: chip damage applied per frame to defender while locked in
 export const SUBMISSIONS = {
-  guillotine:        { name: 'GUILLOTINE',      escapeBase: 60, dps: 0.30, fromPos: ['front_headlock', 'clinch'] },
-  rear_naked_choke:  { name: 'REAR-NAKED CHOKE',escapeBase: 75, dps: 0.40, fromPos: ['back_mount'] },
-  armbar:            { name: 'ARMBAR',          escapeBase: 65, dps: 0.30, fromPos: ['mount', 'guard'] },
-  triangle:          { name: 'TRIANGLE',        escapeBase: 70, dps: 0.32, fromPos: ['guard'] },
-  kimura:            { name: 'KIMURA',          escapeBase: 60, dps: 0.28, fromPos: ['side_control', 'guard'] },
+  guillotine:        { name: 'GUILLOTINE',       lockBuild: 0.55, escapeGain: 6, decay: 0.18, drainAtk: 0.12, drainDef: 0.18, dps: 0.30, fromPos: ['front_headlock', 'clinch'] },
+  rear_naked_choke:  { name: 'REAR-NAKED CHOKE', lockBuild: 0.62, escapeGain: 5, decay: 0.16, drainAtk: 0.14, drainDef: 0.22, dps: 0.40, fromPos: ['back_mount'] },
+  armbar:            { name: 'ARMBAR',           lockBuild: 0.58, escapeGain: 6, decay: 0.20, drainAtk: 0.13, drainDef: 0.18, dps: 0.30, fromPos: ['mount', 'guard'] },
+  triangle:          { name: 'TRIANGLE',         lockBuild: 0.50, escapeGain: 6, decay: 0.18, drainAtk: 0.10, drainDef: 0.18, dps: 0.32, fromPos: ['guard'] },
+  kimura:            { name: 'KIMURA',           lockBuild: 0.55, escapeGain: 7, decay: 0.20, drainAtk: 0.12, drainDef: 0.16, dps: 0.28, fromPos: ['side_control', 'guard'] },
 };
+
+// Helpers — UFC 5 outcomes feel earned, not random. We blend skill ratio with
+// stamina ratio so a tired fighter loses transitions even if their nominal skill
+// is higher. We still fold in a small randomness band (15%) to avoid feeling robotic.
+function _clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function _staminaRatio(f) { return f.maxStamina > 0 ? f.stamina / f.maxStamina : 0; }
+function _grappleSuccess(attackerSkill, defenderSkill, attacker, defender, opts = {}) {
+  // skill ratio in [0..1]
+  const skillTotal = attackerSkill + defenderSkill;
+  const skillR = skillTotal > 0 ? attackerSkill / skillTotal : 0.5;
+  // stamina differential: tired defender easier to take down/sub
+  const sa = _staminaRatio(attacker);
+  const sd = _staminaRatio(defender);
+  const staminaSwing = (sa - sd) * 0.18;          // ±18% based on cardio gap
+  const bias = (opts.bias || 0);                  // position-specific lean (e.g. attempting from dominant pos)
+  const noise = (Math.random() - 0.5) * 0.15;     // small randomness band
+  const chance = _clamp(skillR + staminaSwing + bias + noise, 0.05, 0.95);
+  return Math.random() < chance;
+}
 
 export class FighterState {
   constructor(data, side) {
@@ -102,10 +126,21 @@ export class FighterState {
 
     // Grappling / ground state
     // grapple-related state lives on Match.grapple but each fighter
-    // may store role hints + tap-counter for sub defense.
+    // may store role hints + escape-gauge for sub defense.
     this.grappleRole = null;       // 'top' | 'bottom' | 'clinch_a' | 'clinch_b'
-    this.taps = 0;                  // taps accumulated when defending a sub
+    this.taps = 0;                  // legacy counter exposed for renderer/HUD
+    this.escapeGauge = 0;           // 0..100 escape progress (UFC5-style)
+    this.lastTapFrame = -999;       // frame index of last well-timed tap
     this.movingDirection = 0;       // -1 retreat / +1 advance vs opponent (for walk anim)
+    // Position the renderer needs to know to pick correct ground pose:
+    // 'mount' / 'back_mount' / 'side_control' lay defender flat,
+    // 'guard' keeps the bottom's legs up wrapping the top's hips.
+    this.groundPosition = null;
+    // Hit reaction stagger (separate from raw stunFrames): tracks how the
+    // body whip-reacts to the last clean strike so the renderer can play a
+    // brief lean-back / head-snap pose without affecting timing.
+    this.hitReact = 0;             // 0..1 intensity, decays every frame
+    this.hitReactDir = 0;          // ±1, set when struck
   }
 
   isActionable() {
@@ -226,6 +261,13 @@ export class FighterState {
       this.special = Math.min(this.maxSpecial, this.special + 6);
       return { blocked: false, dodged: true, dmg: 0 };
     }
+    // Hit-react: the body whips relative to where the strike came from.
+    // High-damage / launcher strikes produce a stronger whip; blocked hits
+    // give a lighter shoulder rock.
+    const reactDir = (attacker.x < this.x) ? 1 : -1;
+    this.hitReactDir = reactDir;
+    const whip = blockedFlag ? 0.25 : (attack.launch ? 1.0 : Math.min(1, 0.4 + dmg / 24));
+    this.hitReact = Math.max(this.hitReact, whip);
     if (blockedFlag && !attack.unblockable) {
       blocked = true;
       actualDmg = Math.round(dmg * (0.18 + (1 - this.defenseMul() * 0.3)));
@@ -336,7 +378,7 @@ export class Match {
     //   position: 'clinch'|'mount'|'guard'|'back_mount'|'side_control'|'front_headlock',
     //   centerX,               // anchor point
     //   timer,                 // frames in current position
-    //   submission: null | { kind, attacker, defender, progress, escapeRequired }
+    //   submission: null | { kind, attacker, defender, progress, escape, lockBuild, ... }
     // }
     this.grapple = null;
   }
@@ -471,10 +513,10 @@ export class Match {
     if (dist > 110) return false;
     if (a.stamina < 10) return false;
     a.stamina -= 8;
-    // Opponent can deny with high clinch resistance + takedown defense
-    const resist = (b.clinchMul() + b.takedownDefMul()) * 0.5 * (b.stamina > 0 ? 1 : 0.5);
+    // Stamina-weighted skill curve (UFC 5 feel): tired defender easier to clinch.
     const push = a.clinchMul() * 1.1;
-    if (Math.random() * (push + resist) > push) {
+    const resist = (b.clinchMul() + b.takedownDefMul()) * 0.5;
+    if (!_grappleSuccess(push, resist, a, b)) {
       // Failed — briefly stumble
       a.state = 'idle';
       a.cooldown = 12;
@@ -482,10 +524,12 @@ export class Match {
     }
     const centerX = (a.x + b.x) / 2;
     a.state = 'clinch'; b.state = 'clinch';
-    a.x = centerX - 28 * a.facing; b.x = centerX - 28 * b.facing;
+    // Wider clinch separation so torsos don't merge visually (UFC 5-style spacing).
+    a.x = centerX - 42 * a.facing; b.x = centerX - 42 * b.facing;
     a.vx = 0; b.vx = 0;
     a.facing = b.x > a.x ? 1 : -1; b.facing = a.x > b.x ? 1 : -1;
     a.grappleRole = 'clinch_a'; b.grappleRole = 'clinch_b';
+    a.groundPosition = 'clinch'; b.groundPosition = 'clinch';
     a.attack = null; a.attackFrame = 0;
     b.attack = null; b.attackFrame = 0;
     this.grapple = { a, b, position: 'clinch', centerX, timer: 0, submission: null };
@@ -503,7 +547,8 @@ export class Match {
     f.stamina -= 8;
     const push = f.clinchMul();
     const hold = other.clinchMul() * 1.05;
-    if (Math.random() * (push + hold) > push) return false;
+    // Defender of break (the holder) gains slight bias.
+    if (!_grappleSuccess(push, hold, f, other, { bias: -0.05 })) return false;
     this._endClinch('break');
     return true;
   }
@@ -512,10 +557,10 @@ export class Match {
     const g = this.grapple;
     if (!g) return;
     // Determine separation: who is on which side?
-    if (g.a && g.a !== except) { g.a.state = 'idle'; g.a.grappleRole = null; g.a.attack = null; g.a.attackFrame = 0; g.a.cooldown = 10; }
-    else if (g.a === except) { g.a.grappleRole = null; g.a.attack = null; g.a.attackFrame = 0; }
-    if (g.b && g.b !== except) { g.b.state = 'idle'; g.b.grappleRole = null; g.b.attack = null; g.b.attackFrame = 0; g.b.cooldown = 10; }
-    else if (g.b === except) { g.b.grappleRole = null; g.b.attack = null; g.b.attackFrame = 0; }
+    if (g.a && g.a !== except) { g.a.state = 'idle'; g.a.grappleRole = null; g.a.attack = null; g.a.attackFrame = 0; g.a.cooldown = 10; g.a.groundPosition = null; }
+    else if (g.a === except) { g.a.grappleRole = null; g.a.attack = null; g.a.attackFrame = 0; g.a.groundPosition = null; }
+    if (g.b && g.b !== except) { g.b.state = 'idle'; g.b.grappleRole = null; g.b.attack = null; g.b.attackFrame = 0; g.b.cooldown = 10; g.b.groundPosition = null; }
+    else if (g.b === except) { g.b.grappleRole = null; g.b.attack = null; g.b.attackFrame = 0; g.b.groundPosition = null; }
     // Push them apart slightly
     if (g.a && g.b) {
       const dir = g.a.x < g.b.x ? -1 : 1;
@@ -542,7 +587,9 @@ export class Match {
     }
     const skill = attacker.wrestlingMul() * 1.1 + (attacker.specialty.clinchAffinity * 0.4);
     const def = defender.takedownDefMul() + (defender.specialty.groundAffinity * 0.2);
-    const success = Math.random() * (skill + def) < skill;
+    // Wrestlers / judo: small bonus when shooting from the clinch (already gripped).
+    const bias = inClinch ? 0.05 : 0;
+    const success = _grappleSuccess(skill, def, attacker, defender, { bias });
     if (!success) {
       // sprawled — attacker briefly on knees, defender gains momentum
       if (inClinch) this._endClinch('sprawl');
@@ -600,6 +647,9 @@ export class Match {
     top.x = centerX; bottom.x = centerX;
     top.state = 'ground_top'; bottom.state = 'ground_bottom';
     top.grappleRole = 'top'; bottom.grappleRole = 'bottom';
+    // Renderer reads groundPosition to pick supine vs. guard pose so the
+    // bottom fighter doesn't visually overlap the top fighter.
+    top.groundPosition = position; bottom.groundPosition = position;
     top.attack = null; top.attackFrame = 0;
     bottom.attack = null; bottom.attackFrame = 0;
     top.vx = 0; top.vy = 0; bottom.vx = 0; bottom.vy = 0;
@@ -616,8 +666,13 @@ export class Match {
     if (bottom.stamina < 12) return false;
     bottom.stamina -= 10;
     const esc = bottom.wrestlingMul() + bottom.takedownDefMul();
-    const hold = g.top.wrestlingMul() * 1.2 + (g.timer > 180 ? -0.3 : 0); // harder if they're tired/pinned long
-    if (Math.random() * (esc + hold) > esc) return false;
+    // Top has positional advantage; longer pin = bottom more tired.
+    const hold = g.top.wrestlingMul() * 1.2;
+    const pinPenalty = g.timer > 180 ? -0.06 : 0;
+    // Mount/back-mount are harder to escape than guard/side.
+    const posBias = (g.position === 'mount' || g.position === 'back_mount') ? -0.08
+                    : g.position === 'guard' ? 0.05 : 0;
+    if (!_grappleSuccess(esc, hold, bottom, g.top, { bias: pinPenalty + posBias })) return false;
     // Stand up
     this._endGround('standup');
     return true;
@@ -628,28 +683,44 @@ export class Match {
     const g = this.grapple;
     if (!g || !g.top || !g.bottom) return false;
     if (f !== g.top) return false;
+    // Common: defender gets a brief denial window after a transition attempt.
+    // If they react in time, the advance fails and they may even reverse.
+    if (f.stamina < 8) return false;
+    f.stamina -= 6;
     if (g.position === 'mount') {
-      // Spin to back mount if attacker rolls under
-      const chance = f.wrestlingMul() * 0.7 - g.bottom.takedownDefMul() * 0.4;
-      if (Math.random() < 0.2 + chance * 0.2) {
+      // Try to take the back if bottom turns away.
+      const adv = f.wrestlingMul() * 0.9 + f.specialty.groundAffinity * 0.2;
+      const def = g.bottom.takedownDefMul() * 0.9 + g.bottom.specialty.groundAffinity * 0.2;
+      if (_grappleSuccess(adv, def, f, g.bottom, { bias: -0.10 })) {
         g.position = 'back_mount';
+        g.bottom.groundPosition = 'back_mount';
+        g.top.groundPosition = 'back_mount';
         this.pushEvent('position_advance', { position: 'back_mount' });
         return true;
       }
+      return false;
     } else if (g.position === 'side_control') {
-      if (f.stamina < 8) return false;
-      f.stamina -= 6;
-      g.position = 'mount';
-      this.pushEvent('position_advance', { position: 'mount' });
-      return true;
+      // Step over to mount.
+      const adv = f.wrestlingMul() + f.specialty.groundAffinity * 0.2;
+      const def = g.bottom.takedownDefMul() * 0.85 + g.bottom.specialty.groundAffinity * 0.25;
+      if (_grappleSuccess(adv, def, f, g.bottom, { bias: 0.05 })) {
+        g.position = 'mount';
+        g.bottom.groundPosition = 'mount';
+        g.top.groundPosition = 'mount';
+        this.pushEvent('position_advance', { position: 'mount' });
+        return true;
+      }
+      return false;
     } else if (g.position === 'guard') {
-      // Pass guard → side control. Success depends on top's wrestling vs. bottom's BJJ.
+      // Pass guard → side control. Strongly resisted by BJJ players.
       if (f.stamina < 10) return false;
-      f.stamina -= 8;
+      f.stamina -= 4;
       const pass = f.wrestlingMul() * 1.1;
-      const hold = g.bottom.submissionMul() * 1.0 + g.bottom.specialty.groundAffinity * 0.3;
-      if (Math.random() * (pass + hold) < pass) {
+      const hold = g.bottom.submissionMul() * 1.0 + g.bottom.specialty.groundAffinity * 0.4;
+      if (_grappleSuccess(pass, hold, f, g.bottom)) {
         g.position = 'side_control';
+        g.bottom.groundPosition = 'side_control';
+        g.top.groundPosition = 'side_control';
         this.pushEvent('position_advance', { position: 'side_control' });
         return true;
       }
@@ -661,10 +732,10 @@ export class Match {
   _endGround(reason, except = null) {
     const g = this.grapple;
     if (!g) return;
-    if (g.top && g.top !== except) { g.top.state = 'idle'; g.top.grappleRole = null; g.top.attack = null; g.top.attackFrame = 0; g.top.cooldown = 14; }
-    else if (g.top === except) { g.top.grappleRole = null; g.top.attack = null; g.top.attackFrame = 0; }
-    if (g.bottom && g.bottom !== except) { g.bottom.state = 'idle'; g.bottom.grappleRole = null; g.bottom.attack = null; g.bottom.attackFrame = 0; g.bottom.cooldown = 14; }
-    else if (g.bottom === except) { g.bottom.grappleRole = null; g.bottom.attack = null; g.bottom.attackFrame = 0; }
+    if (g.top && g.top !== except) { g.top.state = 'idle'; g.top.grappleRole = null; g.top.attack = null; g.top.attackFrame = 0; g.top.cooldown = 14; g.top.groundPosition = null; }
+    else if (g.top === except) { g.top.grappleRole = null; g.top.attack = null; g.top.attackFrame = 0; g.top.groundPosition = null; }
+    if (g.bottom && g.bottom !== except) { g.bottom.state = 'idle'; g.bottom.grappleRole = null; g.bottom.attack = null; g.bottom.attackFrame = 0; g.bottom.cooldown = 14; g.bottom.groundPosition = null; }
+    else if (g.bottom === except) { g.bottom.grappleRole = null; g.bottom.attack = null; g.bottom.attackFrame = 0; g.bottom.groundPosition = null; }
     // Push apart so they reset to striking range
     if (g.top && g.bottom) {
       const topSide = g.top.side === 'p1' ? -1 : 1;
@@ -697,7 +768,13 @@ export class Match {
     attacker.stamina -= 12;
     const skill = attacker.submissionMul() * 1.2;
     const def = defender.submissionMul() * 0.85 + defender.takedownDefMul() * 0.5;
-    if (Math.random() * (skill + def) > skill) {
+    // Position bias: dominant positions (back, mount) make lock-in easier;
+    // armbars from guard are a real gamble.
+    const posBias = (pos === 'back_mount') ? 0.10
+                  : (pos === 'mount') ? 0.05
+                  : (pos === 'guard' && isBottom) ? -0.05
+                  : 0;
+    if (!_grappleSuccess(skill, def, attacker, defender, { bias: posBias })) {
       // Failed lock-in — costs position for aggressive subs from guard
       if (pos === 'guard' && isBottom) this._endGround('escape_from_guard');
       this.pushEvent('submission_failed', { kind });
@@ -706,12 +783,17 @@ export class Match {
     attacker.state = 'sub_offense';
     defender.state = 'sub_defense';
     defender.taps = 0;
-    const escapeRequired = Math.round(sub.escapeBase * (0.6 + Math.random() * 0.4) / defender.submissionMul());
+    defender.escapeGauge = 0;
     g.submission = {
       kind, attacker, defender,
-      progress: 0,           // builds up while held; if reaches 100 → tap
-      escapeRequired,        // taps needed to escape
-      hold: 0,               // frames held
+      progress: 0,            // 0..100 attacker FINISH gauge
+      escape: 0,              // 0..100 defender ESCAPE gauge
+      hold: 0,                // frames held
+      lockBuild: sub.lockBuild,
+      escapeGain: sub.escapeGain,
+      decay: sub.decay,
+      drainAtk: sub.drainAtk,
+      drainDef: sub.drainDef,
       dpsDrain: sub.dps,
       // Lock-in animation: 24 frames of "wrapping up the limb" before pressure
       // starts building. The defender can't tap-escape during this window so
@@ -723,20 +805,43 @@ export class Match {
     return true;
   }
 
-  // Defender taps escape button — each tap reduces escapeRequired counter.
+  // Defender taps escape button — UFC 5-style two-bar minigame:
+  //   - each timed tap fills the ESCAPE gauge by escapeGain (skill-scaled)
+  //   - each tap also nudges the attacker's FINISH gauge backward (decay burst)
+  //   - rapid spam is throttled (max one effective tap per ~2 frames)
+  //   - if the ESCAPE gauge reaches 100, the defender breaks free
   submissionTap(defender) {
     const g = this.grapple;
     if (!g || !g.submission) return false;
     if (g.submission.defender !== defender) return false;
     // Taps don't count while the attacker is still locking in the hold.
     if (g.submission.lockIn) return false;
-    if (defender.stamina < 1) return false;
-    defender.stamina = Math.max(0, defender.stamina - 0.8);
+    if (defender.stamina < 0.6) return false;
+    // Throttle: the defender's struggle has a natural rhythm — mashing faster
+    // than ~30Hz doesn't add anything (matches UFC 5 "timed tap" feel).
+    const frame = this.tick || 0;
+    if (frame - defender.lastTapFrame < 2) return false;
+    defender.lastTapFrame = frame;
+    // Each tap costs a sliver of stamina, scaled down for fitter fighters.
+    defender.stamina = Math.max(0, defender.stamina - 0.6);
     defender.taps = (defender.taps || 0) + 1;
-    if (defender.taps >= g.submission.escapeRequired) {
-      // Escape!
-      g.submission.attacker.state = 'ground_top';
-      g.submission.defender.state = 'ground_bottom';
+    const s = g.submission;
+    // Escape progress is skill+stamina weighted: well-conditioned BJJ defender
+    // climbs faster, gassed striker climbs slowly even with frantic taps.
+    const skillBoost = defender.submissionMul();
+    const staminaScale = 0.5 + 0.5 * _staminaRatio(defender);
+    s.escape = Math.min(100, s.escape + s.escapeGain * skillBoost * staminaScale);
+    // Each effective tap also pushes the attacker's lock back a touch.
+    s.progress = Math.max(0, s.progress - s.escapeGain * 0.4);
+    if (s.escape >= 100) {
+      // Escape! Position usually demotes (mount → guard, back → guard).
+      const att = s.attacker, def = s.defender;
+      att.state = 'ground_top'; def.state = 'ground_bottom';
+      // Demote position to reward the escape.
+      if (g.position === 'back_mount' || g.position === 'mount') {
+        g.position = 'guard';
+        att.groundPosition = 'guard'; def.groundPosition = 'guard';
+      }
       g.submission = null;
       this.pushEvent('submission_escape', { defender: defender.side });
       SFX.block();
@@ -806,22 +911,48 @@ export class Match {
       return;
     }
 
-    // Submission tick: progress builds toward 100, applies damage.
+    // Submission tick — UFC 5-style two-bar duel:
+    //   FINISH gauge (s.progress) builds at lockBuild * (skill + stamina-weighted)
+    //   ESCAPE gauge (s.escape) decays slowly while held; defender taps push it up
+    //   The attacker also burns stamina; if they fully gas out, sub auto-fails
     if (g.submission) {
       const s = g.submission;
       s.hold++;
-      // Submission pressure builds faster with attacker skill / defender fatigue
-      const pressure = 0.35 + (s.attacker.submissionMul() - s.defender.submissionMul()) * 0.25;
-      const fatigue = s.defender.stamina <= 0 ? 0.6 : 0;
-      s.progress = Math.min(100, s.progress + pressure + fatigue);
-      // Chip damage representing real submission discomfort
-      s.defender.hp = Math.max(0, s.defender.hp - s.dpsDrain);
-      if (s.defender.hp <= 0 || s.progress >= 100) {
-        // Tap / finish
-        s.defender.hp = 0;
-        s.defender.state = 'down';
-        s.defender.downTime = 90;
-        this.pushEvent('submission_finish', { kind: s.kind, winner: s.attacker.side });
+      const att = s.attacker, def = s.defender;
+      // Stamina drain on both sides while the lock is active.
+      att.stamina = Math.max(0, att.stamina - s.drainAtk);
+      def.stamina = Math.max(0, def.stamina - s.drainDef);
+      // Attacker FINISH builds based on grip strength, defender BJJ defense, and cardio.
+      const skillGap = att.submissionMul() - def.submissionMul() * 0.85;
+      const fitnessBoost = (_staminaRatio(att) - _staminaRatio(def)) * 0.6;
+      const fatigueBonus = def.stamina <= 0 ? 0.45 : 0;
+      const build = Math.max(0.05, s.lockBuild + skillGap * 0.35 + fitnessBoost + fatigueBonus);
+      s.progress = Math.min(100, s.progress + build);
+      // ESCAPE gauge passively bleeds back down (the hold tightens again between taps).
+      s.escape = Math.max(0, s.escape - s.decay);
+      // Mirror gauges to fighters for HUD/animation.
+      def.escapeGauge = s.escape;
+      // Chip damage representing real submission discomfort.
+      def.hp = Math.max(0, def.hp - s.dpsDrain);
+      // Attacker burned all cardio without finishing → hold breaks, position resets.
+      if (att.stamina <= 0 && s.progress < 100) {
+        att.state = 'ground_top'; def.state = 'ground_bottom';
+        if (g.position === 'guard') {
+          // BJJ pull-from-guard fail — stand-up scramble.
+          this._endGround('sub_gassed');
+        } else {
+          g.submission = null;
+        }
+        this.pushEvent('submission_gassed', { kind: s.kind, defender: def.side });
+        SFX.block();
+        return;
+      }
+      if (def.hp <= 0 || s.progress >= 100) {
+        // Tap / finish.
+        def.hp = 0;
+        def.state = 'down';
+        def.downTime = 90;
+        this.pushEvent('submission_finish', { kind: s.kind, winner: att.side });
         SFX.ko();
         this.grapple = null;
         return;
@@ -831,8 +962,8 @@ export class Match {
     // Clinch handling: resolve active attacks (clinch knee/elbow/dirty punch) directly.
     if (g.position === 'clinch' && g.a && g.b) {
       // Keep positions locked within the clinch window
-      g.a.x = g.centerX - 28 * g.a.facing;
-      g.b.x = g.centerX - 28 * g.b.facing;
+      g.a.x = g.centerX - 42 * g.a.facing;
+      g.b.x = g.centerX - 42 * g.b.facing;
       g.a.y = ARENA.groundY; g.b.y = ARENA.groundY;
       // Resolve each side's attack frames
       this._resolveClinchAttack(g.a, g.b);
@@ -1024,6 +1155,11 @@ export class Match {
         f.state = 'idle';
         f.blocking = false;
       }
+    }
+    // Hit-react whip decays even after stun ends so the body settles smoothly.
+    if (f.hitReact > 0) {
+      f.hitReact = Math.max(0, f.hitReact - 0.05);
+      if (f.hitReact === 0) f.hitReactDir = 0;
     }
     if (f.cooldown > 0) f.cooldown--;
     if (f.comboTimer > 0) {
