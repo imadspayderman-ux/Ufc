@@ -315,7 +315,9 @@ export class FighterState {
       stun = 6;
     } else {
       actualDmg = Math.round(dmg * (1.6 - this.defenseMul() * 0.45));
-      stun = attack.launch ? 24 : 14 + Math.min(8, dmg / 2);
+      // Round to an integer so stunFrames-- can hit exactly 0 (otherwise the
+      // === 0 check below misfires and the fighter sticks in 'hit' forever).
+      stun = attack.launch ? 24 : Math.round(14 + Math.min(8, dmg / 2));
     }
     if (attack.drain) {
       this.stamina = Math.max(0, this.stamina - attack.drain);
@@ -1464,7 +1466,10 @@ export class Match {
     }
     if (f.stunFrames > 0) {
       f.stunFrames--;
-      if (f.stunFrames === 0 && (f.state === 'hit' || f.state === 'block')) {
+      // <= 0 (not === 0) so any pre-existing fractional stun still resolves.
+      // The integer-rounding above is the real fix; this is belt-and-braces.
+      if (f.stunFrames <= 0 && (f.state === 'hit' || f.state === 'block')) {
+        f.stunFrames = 0;
         f.state = 'idle';
         f.blocking = false;
       }
