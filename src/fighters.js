@@ -214,30 +214,33 @@ export const ROSTER = [
   },
 ];
 
-// === Uniform silhouette + per-fighter hair / signature color ===============
-// All fighters share an identical pure-black "stickman" silhouette body —
-// same height, build, skin, no belly, no sex-specific frame. The only
-// per-fighter visual differences are HAIR (style + color) and the fighter's
-// SIGNATURE COLOR (used for gloves + trunks waistband). Stats / gameplay
+// === Uniform silhouette + per-fighter vibrant color palette ===============
+// All fighters share an identical stickman silhouette body shape (same
+// height, build, no belly, no sex-specific frame), but each one is rendered
+// in a different VIBRANT body color so they're clearly visible against the
+// dark arena background. Per-fighter HAIR (style + color) + GLOVE color
+// gives each fighter an instantly readable identity. Stats / gameplay
 // (power, speed, grappling, weight class…) are untouched.
-const SILHOUETTE = '#070707';
 const UNIFORM_HEIGHT = 1.0;
 const UNIFORM_BUILD = 0.86;
 const UNIFORM_MUSCLE = 0.45;
 
-// Per-fighter hair style + hair color + signature glove color.
-// hairStyle is read by render.js drawHead.
+// Per-fighter palette:
+//   body  — main silhouette color (vibrant, easily readable on dark bg)
+//   hair  — contrasting hair color
+//   glove — boxing-glove + waistband stripe color
+//   hairStyle — read by render.js drawHead
 const SIGNATURE = {
-  kai:    { hairStyle: 'spiky',       hair: '#39c8ff', color: '#1862c8' }, // electric blue
-  tony:   { hairStyle: 'mohawk',      hair: '#ff2a2a', color: '#cc1133' }, // crimson
-  hiro:   { hairStyle: 'topknot',     hair: '#f0f0f0', color: '#dddddd' }, // white / pearl
-  boris:  { hairStyle: 'wild',        hair: '#ff8c1a', color: '#ff7a1a' }, // wild orange
-  rafa:   { hairStyle: 'long_pony',   hair: '#23c862', color: '#1a8a3a' }, // jungle green
-  amir:   { hairStyle: 'crew',        hair: '#f5c542', color: '#cc9911' }, // sand gold
-  jin:    { hairStyle: 'tall_spike',  hair: '#ffe040', color: '#ffcc11' }, // lightning yellow
-  diana:  { hairStyle: 'long_flame',  hair: '#ff4480', color: '#ee5522' }, // phoenix pink
-  viktor: { hairStyle: 'buzz',        hair: '#9aa6c8', color: '#3a4a88' }, // steel blue
-  zara:   { hairStyle: 'high_pony',   hair: '#a64bff', color: '#6a2dbb' }, // royal purple
+  kai:    { hairStyle: 'spiky',       body: '#1f78ff', hair: '#9ce8ff', glove: '#ffffff' }, // electric blue
+  tony:   { hairStyle: 'mohawk',      body: '#e02030', hair: '#ffffff', glove: '#1a1a1a' }, // crimson
+  hiro:   { hairStyle: 'topknot',     body: '#e8e8ec', hair: '#1a1a1a', glove: '#cc1133' }, // white karate
+  boris:  { hairStyle: 'wild',        body: '#ff7d1a', hair: '#3a2010', glove: '#1a1a1a' }, // wild orange
+  rafa:   { hairStyle: 'long_pony',   body: '#1ea84a', hair: '#1a0e08', glove: '#ffffff' }, // jungle green
+  amir:   { hairStyle: 'crew',        body: '#e8b340', hair: '#1a1a1a', glove: '#1a1a1a' }, // sand gold
+  jin:    { hairStyle: 'tall_spike',  body: '#ffd71a', hair: '#1a1a1a', glove: '#1a1a1a' }, // lightning yellow
+  diana:  { hairStyle: 'long_flame',  body: '#ff3d8a', hair: '#3a0a18', glove: '#ffffff' }, // phoenix pink
+  viktor: { hairStyle: 'buzz',        body: '#3a4eaa', hair: '#c4cdde', glove: '#ffffff' }, // royal navy
+  zara:   { hairStyle: 'high_pony',   body: '#8a3dd6', hair: '#ffffff', glove: '#e8b340' }, // royal purple
 };
 
 for (const f of ROSTER) {
@@ -246,19 +249,19 @@ for (const f of ROSTER) {
   f.muscle = UNIFORM_MUSCLE;
   delete f.belly;
   delete f.sex;
-  const sig = SIGNATURE[f.id] || { hairStyle: 'short', hair: '#ffffff', color: '#ff3a3a' };
+  const sig = SIGNATURE[f.id] || { hairStyle: 'short', body: '#ff3a3a', hair: '#ffffff', glove: '#ffffff' };
   f.hairStyle = sig.hairStyle;
-  f.color = sig.color;
+  f.color = sig.body;
   f.palette = {
     ...f.palette,
-    skin: SILHOUETTE,
-    body: SILHOUETTE,
+    skin: sig.body,
+    body: sig.body,
     hair: sig.hair,
     hairStyle: sig.hairStyle,
-    gloves: sig.color,
-    accent: sig.color,
-    trunks: SILHOUETTE,
-    shorts2: SILHOUETTE,
+    gloves: sig.glove,
+    accent: sig.glove,
+    trunks: sig.body,
+    shorts2: sig.body,
   };
 }
 // ===========================================================================

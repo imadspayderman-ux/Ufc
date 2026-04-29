@@ -234,14 +234,17 @@ export class Renderer {
     drawLeg(ctx, pose.legR, p, bd);
     drawLeg(ctx, pose.legL, p, bd);
 
-    // pelvis / FIGHT SHORTS — silhouette black body with a single thin
-    // signature-colored waistband stripe so each fighter is identifiable.
+    // pelvis / FIGHT SHORTS — slightly darker shade of the fighter's body
+    // color so the shorts read as clothing without looking like a black hole
+    // against the now-vibrant body. Glove-color waistband stripe identifies
+    // the fighter.
     ctx.save();
     ctx.translate(pose.pelvis.x, pose.pelvis.y);
     const accent = p.accent || '#ffd34a';
+    const shortsCol = shadeColor(p.body || p.skin || '#222', -0.55);
 
     // shorts silhouette
-    ctx.fillStyle = '#050505';
+    ctx.fillStyle = shortsCol;
     ctx.beginPath();
     ctx.moveTo(-28 * bd, -6);
     ctx.lineTo(-30 * bd, 28);
@@ -254,9 +257,23 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
 
-    // Single signature-color waistband (the fighter's unique color)
+    // signature-color waistband (the fighter's unique color)
     ctx.fillStyle = accent;
     ctx.fillRect(-28 * bd, -8, 56 * bd, 3);
+
+    // thin outline around the shorts so they pop
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-28 * bd, -6);
+    ctx.lineTo(-30 * bd, 28);
+    ctx.quadraticCurveTo(-26 * bd, 34, -8, 34);
+    ctx.lineTo(-6, 28);
+    ctx.lineTo(6, 28);
+    ctx.lineTo(8, 34);
+    ctx.quadraticCurveTo(26 * bd, 34, 30 * bd, 28);
+    ctx.lineTo(28 * bd, -6);
+    ctx.stroke();
 
     ctx.restore();
 
@@ -570,48 +587,60 @@ function computePose(f, t) {
     pose.armFront.shoulderY += breath * 0.3;
   }
   if (f.state === 'walk') {
-    // Direction-aware walk: forward = confident stride; backward = shuffle step w/ hands high.
+    // Realistic gait: counter-rotated hips & shoulders, heel-to-toe foot lift,
+    // pronounced arm swing in counter-phase to the legs, head bob with stride.
     const dir = typeof f.movingDirection === 'number' ? f.movingDirection : 1;
     const retreat = dir < 0;
-    const strideFreq = 0.32 * cadence * (retreat ? 0.7 : 1.0);
+    const strideFreq = 0.34 * cadence * (retreat ? 0.7 : 1.0);
     const strideMag = retreat ? 0.6 : 1.0;
-    const stride = Math.sin(t * strideFreq) * strideMag;
+    const stride = Math.sin(t * strideFreq) * strideMag;          // -1..1
     const strideAbs = Math.abs(stride);
-    const liftR = Math.max(0, stride);        // lead leg lifts on positive phase
-    const liftL = Math.max(0, -stride);       // back leg lifts on negative phase
-    // Foot plant — lifted foot tilts on toe/heel via footY offset
-    pose.legR.footX = 24 * bd + stride * (retreat ? 10 : 16);
-    pose.legR.footY = -liftR * 16 * bobAmp;
-    pose.legR.kneeX = 16 * bd + stride * 6;
-    pose.legR.kneeY = -42 - liftR * 14 * bobAmp;   // higher knee lift for lighter fighters
-    pose.legL.footX = -20 * bd + stride * (retreat ? 10 : 16);
-    pose.legL.footY = -liftL * 16 * bobAmp;
-    pose.legL.kneeX = -14 * bd + stride * 6;
-    pose.legL.kneeY = -42 - liftL * 14 * bobAmp;
-    // Pelvis rise-fall (mid-step = low, step-plant = high), slight twist.
-    pose.pelvis.y = -82 + strideAbs * 2 * bobAmp - 2;
-    pose.pelvis.x = stride * (retreat ? 1 : 2);
-    // Heavier fighters lean forward slightly; retreat tilts torso back.
-    const lean = (1 - bobAmp) * 0.12 + (retreat ? -0.03 : 0.02);
-    pose.torsoAngle = -stride * 0.05 + lean;
-    // Retreat = hands stay in higher guard; advance = natural arm swing (counter-phase).
+    const liftR = Math.max(0, stride);   // R leg lifts on positive phase
+    const liftL = Math.max(0, -stride);  // L leg lifts on negative phase
+
+    // FEET — lifted leg pulls forward + up, planted leg pushes back + grips ground.
+    // The foot rolls heel-to-toe so on lift the foot tilts forward (footY goes up).
+    pose.legR.footX = 24 * bd + stride * (retreat ? 10 : 22);
+    pose.legR.footY = -liftR * 22 * bobAmp;
+    pose.legR.kneeX = 16 * bd + stride * 10;
+    pose.legR.kneeY = -42 - liftR * 22 * bobAmp;
+    pose.legL.footX = -20 * bd + stride * (retreat ? 10 : 22);
+    pose.legL.footY = -liftL * 22 * bobAmp;
+    pose.legL.kneeX = -14 * bd + stride * 10;
+    pose.legL.kneeY = -42 - liftL * 22 * bobAmp;
+    // Hips raise on each plant, dip mid-step — classic walking sine
+    pose.pelvis.y = -82 + strideAbs * 4 * bobAmp - 3;
+    pose.pelvis.x = stride * (retreat ? 1 : 3);
+
+    // TORSO COUNTER-ROTATION — shoulders rotate OPPOSITE to hips for proper gait.
+    // (When R foot is forward, R hip is forward, but R shoulder is BACK.)
+    const lean = (1 - bobAmp) * 0.10 + (retreat ? -0.04 : 0.03);
+    pose.torsoAngle = -stride * 0.12 + lean;
+
+    // ARMS — strong counter-phase swing. Hand swings forward when same-side leg is back.
     if (retreat) {
-      pose.armFront.handX = 16; pose.armFront.handY = -152;
+      // Backpedaling: hands stay high in guard, very small swing.
+      pose.armFront.handX = 18 - stride * 6; pose.armFront.handY = -152;
       pose.armFront.elbowX = 14 * bd; pose.armFront.elbowY = -140;
-      pose.armBack.handX = 8;  pose.armBack.handY = -150;
+      pose.armBack.handX = 8 + stride * 6;   pose.armBack.handY = -150;
       pose.armBack.elbowX = -10 * bd; pose.armBack.elbowY = -138;
     } else {
-      pose.armFront.handX = 26 - stride * 18;
-      pose.armFront.handY = -128 + strideAbs * 4;
-      pose.armFront.elbowX = 20 * bd - stride * 8;
+      // Forward walk: pronounced opposite-arm swing.
+      // Front arm = lead-side; swings BACKWARD when lead leg moves forward.
+      pose.armFront.handX = 26 - stride * 28;
+      pose.armFront.handY = -130 + strideAbs * 4;
+      pose.armFront.elbowX = 22 * bd - stride * 14;
       pose.armFront.elbowY = -128 + strideAbs * 2;
-      pose.armBack.handX = 0 + stride * 18;
-      pose.armBack.handY = -128 + strideAbs * 4;
-      pose.armBack.elbowX = -14 * bd + stride * 8;
-      pose.armBack.elbowY = -125 + strideAbs * 2;
+      // Back arm = rear-side; swings FORWARD when lead leg moves forward.
+      pose.armBack.handX = -4 + stride * 28;
+      pose.armBack.handY = -130 + strideAbs * 4;
+      pose.armBack.elbowX = -16 * bd + stride * 14;
+      pose.armBack.elbowY = -126 + strideAbs * 2;
     }
-    // Head bobs slightly with stride
-    pose.headOffset.y = -152 * ht + strideAbs * 2 * bobAmp - 2;
+
+    // HEAD — bobs vertically with stride, sways laterally with shoulder rotation
+    pose.headOffset.x = -2 + stride * 3;
+    pose.headOffset.y = -152 * ht + strideAbs * 3 * bobAmp - 2;
   }
   if (f.state === 'crouch') {
     pose.pelvis.y = -52;
@@ -974,95 +1003,149 @@ function applyAttackPose(pose, kind, k, phase, f) {
   const easeIn = k * k;                     // accelerating for chamber
   switch (kind) {
     case 'jab': {
-      // lead hand extends forward with a snap, rear hand pulls back as guard
+      // Lead-hand jab: snap-extend front fist, rear hand glued to chin,
+      // small hip drive forward, lead foot stamps an extra inch.
       const reach = easeOut;
-      pose.armFront.elbowX = 16 + reach * 34;
-      pose.armFront.elbowY = -132 - reach * 2;
-      pose.armFront.handX = 24 + reach * 60;
-      pose.armFront.handY = -134 - reach * 2;
-      pose.armBack.handX = -4; pose.armBack.handY = -144;
-      pose.armBack.elbowX = -10; pose.armBack.elbowY = -130;
-      pose.torsoAngle = 0.05 * reach;      // slight lean into jab
-      pose.pelvis.x = reach * 3;
+      pose.armFront.elbowX = 18 + reach * 40;
+      pose.armFront.elbowY = -132 - reach * 4;
+      pose.armFront.handX = 26 + reach * 74;
+      pose.armFront.handY = -134 - reach * 4;
+      pose.armBack.handX = 6; pose.armBack.handY = -150;
+      pose.armBack.elbowX = -6; pose.armBack.elbowY = -130;
+      pose.torsoAngle = 0.10 * reach;
+      pose.pelvis.x = reach * 4;
+      pose.legR.footX = 28 * 0.86 + reach * 8;  // lead foot stamps forward
+      pose.legL.footY = -reach * 2;             // back foot rises slightly on toe
+      pose.headOffset.x = -2 + reach * 3;
       break;
     }
     case 'cross': {
-      // rear hand drives forward with full hip + shoulder rotation, lead hand protects chin
+      // Rear-hand cross: HUGE hip + shoulder rotation, rear foot pivots on the
+      // toe (heel rotates upward), lead hand glued to chin, head moves with
+      // the rotation. The whole body rotates BEHIND the punch.
       const reach = easeOut;
-      pose.armBack.elbowX = -6 + reach * 28;
-      pose.armBack.elbowY = -134 - reach * 2;
-      pose.armBack.handX = -2 + reach * 86;
-      pose.armBack.handY = -134 - reach * 2;
-      pose.armFront.handX = 14; pose.armFront.handY = -148;
-      pose.armFront.elbowX = 14; pose.armFront.elbowY = -135;
-      pose.torsoAngle = -0.24 * reach;      // body rotates behind the punch
-      pose.pelvis.x = reach * 5;            // hip drive forward
-      pose.headOffset.x = -2 + reach * 6;
-      // Back foot pivots (toe up)
-      pose.legL.footY -= reach * 4;
+      pose.armBack.elbowX = -2 + reach * 36;
+      pose.armBack.elbowY = -134 - reach * 4;
+      pose.armBack.handX = 0 + reach * 100;
+      pose.armBack.handY = -134 - reach * 4;
+      pose.armFront.handX = 14; pose.armFront.handY = -150;
+      pose.armFront.elbowX = 16; pose.armFront.elbowY = -136;
+      pose.torsoAngle = -0.36 * reach;
+      pose.pelvis.x = reach * 7;
+      pose.headOffset.x = -2 + reach * 8;
+      // Rear foot pivots: heel rotates up (footY rises), knee twists in.
+      pose.legL.footY -= reach * 10;
+      pose.legL.kneeX = -14 * 0.86 + reach * 5;
+      pose.legL.kneeY = -42 - reach * 4;
+      // Lead leg straightens slightly to brace.
+      pose.legR.footX = 24 * 0.86 + reach * 4;
       break;
     }
     case 'uppercut': {
-      // dip + rise: chamber drops body, extension rises with back hand arcing up
+      // Uppercut = explosive level change. Dip deeply during chamber (knees
+      // bend, hips drop), then explode upward with the rear fist arcing from
+      // hip to chin. Body rotates and rises on extension.
       const dip = phase === 'startup' ? easeIn : 1 - easeOut;
       const rise = phase === 'startup' ? 0 : easeOut;
-      pose.pelvis.y = -82 + dip * 4 - rise * 10;
-      pose.torsoAngle = -0.12 * rise;
-      pose.armBack.elbowX = 4 + rise * 16;
-      pose.armBack.elbowY = -120 - rise * 18;
-      pose.armBack.handX = 6 + rise * 30;
-      pose.armBack.handY = -116 - rise * 44;
-      pose.armFront.handX = 16; pose.armFront.handY = -146;
+      pose.pelvis.y = -82 + dip * 10 - rise * 16;
+      pose.torsoAngle = -0.16 * rise + 0.10 * dip;
+      // Knees bend deeply during the dip
+      pose.legR.kneeY = -42 + dip * 14 - rise * 4;
+      pose.legL.kneeY = -42 + dip * 14 - rise * 4;
+      // Rear fist arcs from low/back to chin level
+      pose.armBack.elbowX = -4 + rise * 22;
+      pose.armBack.elbowY = -116 - rise * 28;
+      pose.armBack.handX = 6 + rise * 40;
+      pose.armBack.handY = -106 - rise * 60;
+      pose.armFront.handX = 16; pose.armFront.handY = -150;
+      pose.armFront.elbowX = 14; pose.armFront.elbowY = -132;
+      // Head rises with body, tilts back slightly
+      pose.headOffset.y = -152 * ht - rise * 8;
       break;
     }
     case 'kick': {
-      // Round kick (mid/body): chamber knee up, extend leg horizontally, retract.
+      // Round body kick: chamber the knee high & tucked, then PIVOT on the
+      // support leg and whip the kicking leg horizontally through the target.
+      // Body leans hard away from the kick to balance.
       const chamber = phase === 'startup' ? easeIn : 1 - easeOut;
       const extend = phase === 'startup' ? 0 : easeOut;
-      // Knee raises during chamber, leg whips out during extend.
-      const kneeX = 20 + chamber * 10;
-      const kneeY = -70 + chamber * -34 + extend * 20;
-      const footX = 20 + chamber * 18 + extend * 70;
-      const footY = -70 + chamber * -40 + extend * 30;
-      pose.legR.kneeX = kneeX; pose.legR.kneeY = kneeY;
-      pose.legR.footX = footX; pose.legR.footY = footY;
-      pose.torsoAngle = -0.22 * extend;
-      pose.armBack.handX = -18 + extend * 4;
-      pose.armBack.handY = -150;
-      pose.armFront.handX = 8 - extend * 6;
-      pose.armFront.handY = -132 + extend * 6;
-      pose.pelvis.x = -extend * 4;
+      // Kicking leg (right): chambers high & tucked, then snaps out.
+      pose.legR.kneeX = 16 + chamber * 16 - extend * 10;
+      pose.legR.kneeY = -56 - chamber * 36 + extend * 18;
+      pose.legR.footX = 18 + chamber * 26 + extend * 80;
+      pose.legR.footY = -60 - chamber * 56 + extend * 28;
+      // Support leg (left) PIVOTS — knee straightens, foot turns out.
+      pose.legL.kneeX = -10;
+      pose.legL.kneeY = -38 + extend * 4;
+      pose.legL.footX = -18 + extend * 4;
+      pose.legL.footY = 0;
+      // Hip + shoulder rotation: chamber pre-loads, extension unwinds violently.
+      pose.torsoAngle = -0.36 * extend + 0.12 * chamber;
+      pose.pelvis.x = -extend * 8;
+      pose.pelvis.y = -82 + chamber * 4;
+      // Arms windmill for balance — front arm pulls back, back arm reaches forward.
+      pose.armBack.handX = -22 - extend * 8;
+      pose.armBack.handY = -150 + extend * 12;
+      pose.armBack.elbowX = -16; pose.armBack.elbowY = -136;
+      pose.armFront.handX = 10 - extend * 14;
+      pose.armFront.handY = -130 + extend * 12;
+      pose.armFront.elbowX = 12; pose.armFront.elbowY = -128;
+      // Head leans away to balance the kick
+      pose.headOffset.x = -4 - extend * 6;
       break;
     }
     case 'low_kick': {
-      // Low kick — knee stays low, whips across at shin height
+      // Low kick — chops the lead leg / calf with a downward arc. Step in
+      // slightly with the support leg, hip rotates, body leans into the kick.
       const chamber = phase === 'startup' ? easeIn : 1 - easeOut;
       const extend = phase === 'startup' ? 0 : easeOut;
-      pose.legR.kneeX = 16 + chamber * 10;
-      pose.legR.kneeY = -32 - chamber * 10;
-      pose.legR.footX = 16 + chamber * 20 + extend * 60;
-      pose.legR.footY = -26 + chamber * -6 + extend * 4;
-      pose.torsoAngle = -0.12 * extend;
-      pose.armFront.handX = 12 - extend * 2; pose.armFront.handY = -130;
-      pose.armBack.handX = -14; pose.armBack.handY = -144;
+      pose.legR.kneeX = 18 + chamber * 14;
+      pose.legR.kneeY = -36 - chamber * 16 + extend * 4;
+      pose.legR.footX = 18 + chamber * 26 + extend * 78;
+      pose.legR.footY = -22 - chamber * 8 + extend * 8;
+      // Support leg compresses to drive the rotation.
+      pose.legL.kneeY = -42 + extend * 6;
+      pose.legL.footX = -18 - extend * 4;
+      // Body rotates with the kick.
+      pose.torsoAngle = -0.22 * extend + 0.06 * chamber;
+      pose.pelvis.x = -extend * 5;
+      // Front hand pulls in to chin, rear hand drops for counter-balance.
+      pose.armFront.handX = 10 - extend * 4; pose.armFront.handY = -132;
+      pose.armFront.elbowX = 14; pose.armFront.elbowY = -130;
+      pose.armBack.handX = -16 - extend * 6; pose.armBack.handY = -146 + extend * 4;
+      pose.armBack.elbowX = -14; pose.armBack.elbowY = -132;
+      pose.headOffset.x = -2 - extend * 3;
       break;
     }
     case 'head_kick': {
-      // High head kick — deep chamber, whip upward, land at head height
+      // High head kick — deepest chamber, snap leg up to head height, body
+      // leans back massively to fit the leg's arc, support leg pivots fully.
       const chamber = phase === 'startup' ? easeIn : 1 - easeOut;
       const extend = phase === 'startup' ? 0 : easeOut;
-      pose.legR.kneeX = 14 + chamber * 16;
-      pose.legR.kneeY = -90 + chamber * -30 + extend * 20;
-      pose.legR.footX = 14 + chamber * 22 + extend * 70;
-      pose.legR.footY = -90 + chamber * -50 + extend * -14;
-      pose.torsoAngle = -0.34 * extend;
-      pose.pelvis.y = -82 + extend * 8;
-      pose.armBack.handX = -24; pose.armBack.handY = -130;
-      pose.armFront.handX = 12; pose.armFront.handY = -120;
-      pose.headOffset.x = -2 - extend * 4;
-      // Support leg bends
-      pose.legL.kneeY = -36;
-      pose.legL.footX = -14;
+      // Knee chambers near the chest, then whips up and out at head height.
+      pose.legR.kneeX = 12 + chamber * 22;
+      pose.legR.kneeY = -100 - chamber * 40 + extend * 14;
+      pose.legR.footX = 12 + chamber * 28 + extend * 86;
+      pose.legR.footY = -110 - chamber * 60 - extend * 8;
+      // Support leg straightens, pivots so the toe points away from target.
+      pose.legL.kneeX = -8;
+      pose.legL.kneeY = -36 + extend * 2;
+      pose.legL.footX = -16;
+      pose.legL.footY = 0;
+      // Body leans back hard, hips rotate aggressively.
+      pose.torsoAngle = -0.46 * extend + 0.10 * chamber;
+      pose.pelvis.x = -extend * 8;
+      pose.pelvis.y = -82 + chamber * 6 + extend * 6;
+      // Arms drop & windmill for balance.
+      pose.armBack.handX = -28 - extend * 4;
+      pose.armBack.handY = -126 + extend * 18;
+      pose.armBack.elbowX = -18; pose.armBack.elbowY = -114;
+      pose.armFront.handX = 14 - extend * 10;
+      pose.armFront.handY = -118 + extend * 14;
+      pose.armFront.elbowX = 16; pose.armFront.elbowY = -112;
+      // Head tilts away to clear the kick.
+      pose.headOffset.x = -2 - extend * 8;
+      pose.headOffset.y = -152 * ht - extend * 4;
       break;
     }
     case 'special': {
@@ -1175,6 +1258,35 @@ function drawTorso(ctx, pose, p, bd, ht, data) {
   );
   ctx.closePath();
   ctx.fill();
+
+  // Subtle inner shadow on the back-side half so the torso reads as a 3D
+  // shape rather than a flat colored cutout. Body color is now vibrant —
+  // without this it loses dimensional volume.
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.moveTo(-waistW, waistY);
+  ctx.bezierCurveTo(-waistW, -14, -shoulderW * 0.95, -34, -shoulderW, shoulderY);
+  ctx.lineTo(-shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(-2, neckOffsetY - 2);
+  ctx.lineTo(-2, waistY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Thin dark outline around the whole silhouette so it pops against the
+  // dark background.
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(-waistW, waistY);
+  ctx.bezierCurveTo(-waistW, -14, -shoulderW * 0.95, -34, -shoulderW, shoulderY);
+  ctx.lineTo(-shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(-5, neckOffsetY - 2);
+  ctx.lineTo(5, neckOffsetY - 2);
+  ctx.lineTo(shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(shoulderW, shoulderY);
+  ctx.bezierCurveTo(shoulderW * 0.95, -34, waistW, -14, waistW, waistY);
+  ctx.closePath();
+  ctx.stroke();
 
   ctx.restore();
 }
@@ -1446,6 +1558,20 @@ function drawHead(ctx, pose, p, ht, f) {
   ctx.beginPath();
   ctx.ellipse(0, 0, 18, 22 * ht, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  // Subtle inner shadow on the lower half of the face to give the head a
+  // sense of volume now that the body is rendered in a vibrant color
+  // (without this the head reads as a flat colored disk).
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath();
+  ctx.ellipse(0, 6, 16, 14 * ht, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Minimal eye dots — keeps the silhouette aesthetic but lets the head
+  // read as a face. Small, dark, slightly offset toward the facing side.
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.beginPath(); ctx.arc(-4, -2, 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(4, -2, 1.6, 0, Math.PI * 2); ctx.fill();
 
   // === HAIR (per-fighter unique style + color) ============================
   ctx.fillStyle = hair;
