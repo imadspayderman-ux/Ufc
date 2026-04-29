@@ -554,7 +554,10 @@ function computePose(f, t) {
   // Place joint shoulders just inside that edge so the deltoid cap hugs the torso.
   const shoulderEdgeX = 26 * bd;
   const shoulderWorldY = -68 * ht - 82;  // pelvis.y + shoulderY in torso local coords
-  // Defaults: proper boxing guard — elbows bent out, gloves up in front of jaw.
+  // Defaults: relaxed stickman standing pose — arms hang free at the sides
+  // with a slight bend (NOT permanently glued to the head). The arms only
+  // raise into a guard during 'block' or during the chamber/recovery of an
+  // attack. This gives the figure a natural, body-free silhouette.
   const pose = {
     pelvis: { x: 0, y: -82 },
     torsoAngle: 0,
@@ -563,13 +566,13 @@ function computePose(f, t) {
     legR: { hipX: 12 * bd,  hipY: -78, kneeX: 20 * bd,  kneeY: -42, footX: 28 * bd,  footY: 0 }, // lead leg (wider stance)
     armBack: {
       shoulderX: -shoulderEdgeX, shoulderY: shoulderWorldY,
-      elbowX: -18 * bd, elbowY: -118,
-      handX: -2, handY: -138,
+      elbowX: -22 * bd, elbowY: -114,
+      handX: -16 * bd, handY: -76,
     },
     armFront: {
       shoulderX: shoulderEdgeX, shoulderY: shoulderWorldY,
-      elbowX: 30 * bd, elbowY: -118,
-      handX: 20 * bd, handY: -140,
+      elbowX: 22 * bd, elbowY: -114,
+      handX: 16 * bd, handY: -76,
     },
   };
 
@@ -617,25 +620,27 @@ function computePose(f, t) {
     const lean = (1 - bobAmp) * 0.10 + (retreat ? -0.04 : 0.03);
     pose.torsoAngle = -stride * 0.12 + lean;
 
-    // ARMS — strong counter-phase swing. Hand swings forward when same-side leg is back.
+    // ARMS — natural pendulum swing at hip level (NOT raised guard).
+    // Hand swings forward when same-side leg is back, in counter-phase.
     if (retreat) {
-      // Backpedaling: hands stay high in guard, very small swing.
-      pose.armFront.handX = 18 - stride * 6; pose.armFront.handY = -152;
-      pose.armFront.elbowX = 14 * bd; pose.armFront.elbowY = -140;
-      pose.armBack.handX = 8 + stride * 6;   pose.armBack.handY = -150;
-      pose.armBack.elbowX = -10 * bd; pose.armBack.elbowY = -138;
+      // Backpedaling: hands stay slightly raised but still relaxed, small swing.
+      pose.armFront.handX = 16 * bd - stride * 8; pose.armFront.handY = -90;
+      pose.armFront.elbowX = 20 * bd;            pose.armFront.elbowY = -118;
+      pose.armBack.handX = -12 * bd + stride * 8;  pose.armBack.handY = -90;
+      pose.armBack.elbowX = -18 * bd;             pose.armBack.elbowY = -118;
     } else {
-      // Forward walk: pronounced opposite-arm swing.
+      // Forward walk: pronounced opposite-arm pendulum swing at hip level
+      // — like a real walk, NOT a held-up boxing guard.
       // Front arm = lead-side; swings BACKWARD when lead leg moves forward.
-      pose.armFront.handX = 26 - stride * 28;
-      pose.armFront.handY = -130 + strideAbs * 4;
-      pose.armFront.elbowX = 22 * bd - stride * 14;
-      pose.armFront.elbowY = -128 + strideAbs * 2;
+      pose.armFront.handX = 16 * bd - stride * 30;
+      pose.armFront.handY = -76 + strideAbs * 6;
+      pose.armFront.elbowX = 22 * bd - stride * 16;
+      pose.armFront.elbowY = -114 + strideAbs * 2;
       // Back arm = rear-side; swings FORWARD when lead leg moves forward.
-      pose.armBack.handX = -4 + stride * 28;
-      pose.armBack.handY = -130 + strideAbs * 4;
-      pose.armBack.elbowX = -16 * bd + stride * 14;
-      pose.armBack.elbowY = -126 + strideAbs * 2;
+      pose.armBack.handX = -16 * bd + stride * 30;
+      pose.armBack.handY = -76 + strideAbs * 6;
+      pose.armBack.elbowX = -22 * bd + stride * 16;
+      pose.armBack.elbowY = -114 + strideAbs * 2;
     }
 
     // HEAD — bobs vertically with stride, sways laterally with shoulder rotation
@@ -2115,14 +2120,19 @@ function drawFighterStandalone(ctx, fs, fighter) {
   drawLeg(ctx, pose.legL, p, bd);
   ctx.save();
   ctx.translate(pose.pelvis.x, pose.pelvis.y);
-  ctx.fillStyle = p.trunks;
+  // Shorts are a darker shade of the body color (matches main drawFighter
+  // logic). p.trunks/p.shorts2 are body-colored after fighters.js
+  // normalization, so we shade them down here to keep the shorts visible
+  // against the body torso.
+  const shortsCol = shadeColor(p.body || p.skin || '#222', -0.55);
+  ctx.fillStyle = shortsCol;
   ctx.fillRect(-26 * bd, -6, 52 * bd, 36);
-  ctx.fillStyle = p.shorts2 || p.trunks;
+  ctx.fillStyle = shortsCol;
   ctx.fillRect(-26 * bd, 22, 52 * bd, 8);
-  ctx.fillStyle = '#1a1a1a';
-  ctx.fillRect(-26 * bd, -10, 52 * bd, 6);
-  ctx.fillStyle = p.accent;
-  ctx.fillRect(-6, -10, 12, 6);
+  // Waistband uses the fighter's accent (glove) color so it's distinct
+  // from both the body and the shorts.
+  ctx.fillStyle = p.accent || '#ffffff';
+  ctx.fillRect(-26 * bd, -10, 52 * bd, 4);
   ctx.restore();
   drawArm(ctx, pose.armBack, p, bd, true);
   drawTorso(ctx, pose, p, bd, ht, fighter);
