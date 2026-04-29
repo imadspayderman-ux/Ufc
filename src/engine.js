@@ -905,6 +905,10 @@ export class Match {
     newTop.groundPosition = 'side_control'; newBottom.groundPosition = 'side_control';
     newTop.attack = null; newTop.attackFrame = 0;
     newBottom.attack = null; newBottom.attackFrame = 0;
+    // Reset scramble: the old bottom's escape progress shouldn't carry over
+    // to the new bottom after a full positional reversal.
+    g.scramble = 0; g.sinceStrike = 9999;
+    newTop.scrambleGauge = 0; newBottom.scrambleGauge = 0;
     this.pushEvent('sweep_success', { newTop: newTop.side, position: 'side_control' });
     SFX.hitHard();
     return true;
