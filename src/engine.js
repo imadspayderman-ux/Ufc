@@ -270,7 +270,7 @@ export class FighterState {
     this.hitReact = Math.max(this.hitReact, whip);
     if (blockedFlag && !attack.unblockable) {
       blocked = true;
-      actualDmg = Math.round(dmg * (0.18 + (1 - this.defenseMul() * 0.3)));
+      actualDmg = Math.round(dmg * (0.18 + (1 - this.defenseMul()) * 0.3));
       actualDmg = Math.max(1, Math.min(actualDmg, dmg));
       this.stamina = Math.max(0, this.stamina - 6 - dmg * 0.4);
       stun = 6;
@@ -973,7 +973,7 @@ export class Match {
     }
 
     // Ground top & pound resolution
-    if ((g.position === 'mount' || g.position === 'back_mount' || g.position === 'side_control') && g.top && g.bottom) {
+    if ((g.position === 'mount' || g.position === 'back_mount' || g.position === 'side_control' || g.position === 'guard') && g.top && g.bottom) {
       g.top.x = g.centerX; g.bottom.x = g.centerX;
       g.top.y = ARENA.groundY; g.bottom.y = ARENA.groundY;
       this._resolveGroundAttack(g.top, g.bottom);

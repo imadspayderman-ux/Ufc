@@ -185,8 +185,8 @@ function startMatch() {
   document.getElementById('hud-name-p2').textContent = p2.name;
   document.getElementById('hud-nick-p1').textContent = `"${p1.nickname}"`;
   document.getElementById('hud-nick-p2').textContent = `"${p2.nickname}"`;
-  document.getElementById('hud-style-p1').textContent = `${p1.style} • ${p1.weightClass || ''}`.trim();
-  document.getElementById('hud-style-p2').textContent = `${p2.style} • ${p2.weightClass || ''}`.trim();
+  document.getElementById('hud-style-p1').textContent = `${p1.style} • ${p1.weight || ''}`.trim();
+  document.getElementById('hud-style-p2').textContent = `${p2.style} • ${p2.weight || ''}`.trim();
   // Portrait mini-canvases
   drawHudPortrait('portrait-p1', p1);
   drawHudPortrait('portrait-p2', p2);
