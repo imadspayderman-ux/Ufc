@@ -284,11 +284,17 @@ export class FighterState {
     this.hp = Math.max(0, this.hp - actualDmg);
     this.special = Math.min(this.maxSpecial, this.special + (blocked ? 2 : 4));
 
-    // knockback
+    // knockback — scales with raw damage so heavier strikes send opponent
+    // flying further. Cleanly-landed bombs briefly lift the opponent (small
+    // negative vy) for that classic MMA "rocked" look.
     const dir = attacker.x < this.x ? 1 : -1;
-    this.vx = dir * (attack.pushback || 5) * (blocked ? 0.4 : 1);
+    const dmgKick = blocked ? 0 : Math.min(6, dmg * 0.22);
+    this.vx = dir * ((attack.pushback || 5) + dmgKick) * (blocked ? 0.4 : 1);
     if (attack.launch && !blocked) {
       this.vy = -10;
+    } else if (!blocked && dmg >= 14) {
+      // Heavy non-launcher strike: slight hop to sell the impact.
+      this.vy = Math.min(this.vy, -2.5);
     }
 
     if (this.hp <= 0) {
@@ -1250,9 +1256,12 @@ export class Match {
     attacker.combo += 1;
     attacker.comboTimer = 50;
     attacker.lastDamageDealt = result.dmg;
-    this.shake = result.blocked ? 4 : Math.min(14, 6 + Math.round(result.dmg * 0.4));
-    this.flash = result.blocked ? 2 : 4;
-    this.hitstop = result.blocked ? 1 : (attacker.attack.unblockable ? 7 : (result.dmg >= 12 ? 4 : 2));
+    // Screen shake scales dramatically with damage so big strikes feel heavy.
+    this.shake = result.blocked ? 4 : Math.min(24, 8 + Math.round(result.dmg * 0.7));
+    // Brighter white flash on clean hits — more on high-damage strikes.
+    this.flash = result.blocked ? 2 : Math.min(9, 4 + Math.round(result.dmg * 0.25));
+    // Longer hitstop on heavy / finishing strikes for a weightier connection.
+    this.hitstop = result.blocked ? 1 : (attacker.attack.unblockable ? 9 : (result.dmg >= 16 ? 6 : result.dmg >= 10 ? 4 : 3));
     this.pushEvent('hit', {
       attacker: attacker.side,
       defender: defender.side,
