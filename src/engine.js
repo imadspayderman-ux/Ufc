@@ -1,5 +1,6 @@
 // Combat engine: state, physics, hitboxes, damage.
 import { SFX } from './audio.js';
+import { getWeightClass, getSpecialty } from './fighters.js';
 
 export const ARENA = {
   width: 1280,
@@ -35,6 +36,22 @@ export const ATTACK_DATA = {
   low_kick:  { startup: 7,  active: 4, recovery: 14, damage: 7,  reach: 115, height: 'low',  stam: 7,  pushback: 5,  meter: 6,  height_y: 100, drain: 8 },
   head_kick: { startup: 13, active: 5, recovery: 22, damage: 17, reach: 145, height: 'high', stam: 15, pushback: 11, meter: 12, height_y: 20 },
   special:   { startup: 14, active: 8, recovery: 22, damage: 28, reach: 165, height: 'all',  stam: 0,  pushback: 14, meter: 0,  height_y: 35, unblockable: true, launch: true },
+  // ----- Grappling / clinch (no projectile hitbox; resolved by clinch logic) -----
+  clinch_knee:  { startup: 6,  active: 3, recovery: 10, damage: 8,  reach: 0,   height: 'mid',  stam: 7,  pushback: 0, meter: 6, height_y: 60,  clinch: true },
+  clinch_elbow: { startup: 5,  active: 3, recovery: 10, damage: 9,  reach: 0,   height: 'high', stam: 7,  pushback: 0, meter: 6, height_y: 35,  clinch: true },
+  dirty_punch:  { startup: 4,  active: 3, recovery: 8,  damage: 5,  reach: 0,   height: 'high', stam: 5,  pushback: 0, meter: 4, height_y: 35,  clinch: true },
+  // Ground & pound (top mount only)
+  ground_punch: { startup: 4,  active: 3, recovery: 8,  damage: 6,  reach: 0,   height: 'all',  stam: 4,  pushback: 0, meter: 5, height_y: 35,  ground: true },
+  ground_elbow: { startup: 6,  active: 3, recovery: 10, damage: 10, reach: 0,   height: 'all',  stam: 6,  pushback: 0, meter: 7, height_y: 35,  ground: true },
+};
+
+// Submission catalogue. `escapeBase` = base taps needed to escape (modified by defender stats).
+export const SUBMISSIONS = {
+  guillotine:        { name: 'GUILLOTINE',      escapeBase: 60, dps: 0.30, fromPos: ['front_headlock', 'clinch'] },
+  rear_naked_choke:  { name: 'REAR-NAKED CHOKE',escapeBase: 75, dps: 0.40, fromPos: ['back_mount'] },
+  armbar:            { name: 'ARMBAR',          escapeBase: 65, dps: 0.30, fromPos: ['mount', 'guard'] },
+  triangle:          { name: 'TRIANGLE',        escapeBase: 70, dps: 0.32, fromPos: ['guard'] },
+  kimura:            { name: 'KIMURA',          escapeBase: 60, dps: 0.28, fromPos: ['side_control', 'guard'] },
 };
 
 export class FighterState {
@@ -47,10 +64,13 @@ export class FighterState {
     this.vx = 0;
     this.vy = 0;
 
-    this.maxHp = 100 + (data.stats.stamina - 5) * 4;
+    const wc = getWeightClass(data);
+    this.weightClass = wc;
+    this.specialty = getSpecialty(data);
+    this.maxHp = Math.round((100 + (data.stats.stamina - 5) * 4) * wc.hpMul);
     this.hp = this.maxHp;
 
-    this.maxStamina = 80 + data.stats.stamina * 4;
+    this.maxStamina = Math.round((80 + data.stats.stamina * 4) * (0.9 + wc.hpMul * 0.1));
     this.stamina = this.maxStamina;
 
     this.maxSpecial = 100;
@@ -79,16 +99,35 @@ export class FighterState {
     // Animation interpolation data
     this.pose = 'idle';
     this.poseT = 0;
+
+    // Grappling / ground state
+    // grapple-related state lives on Match.grapple but each fighter
+    // may store role hints + tap-counter for sub defense.
+    this.grappleRole = null;       // 'top' | 'bottom' | 'clinch_a' | 'clinch_b'
+    this.taps = 0;                  // taps accumulated when defending a sub
+    this.movingDirection = 0;       // -1 retreat / +1 advance vs opponent (for walk anim)
   }
 
   isActionable() {
     return ['idle', 'walk', 'crouch', 'jump', 'block', 'dodge'].includes(this.state) && this.cooldown <= 0;
   }
   isOnGround() { return this.y >= ARENA.groundY - 0.1; }
-  speedMul() { return 0.7 + this.data.stats.speed * 0.05; }
-  powerMul() { return 0.7 + this.data.stats.power * 0.05; }
+  // weight-class aware modifiers
+  speedMul() { return (0.7 + this.data.stats.speed * 0.05) * this.weightClass.speedMul; }
+  powerMul() { return (0.7 + this.data.stats.power * 0.05) * this.weightClass.powerMul; }
   defenseMul() { return 0.7 + this.data.stats.defense * 0.04; }
   techMul() { return 0.85 + this.data.stats.technique * 0.03; }
+  wrestlingMul() { return 0.6 + ((this.data.grappling && this.data.grappling.wrestling) || 5) * 0.06; }
+  submissionMul() { return 0.6 + ((this.data.grappling && this.data.grappling.submissions) || 5) * 0.06; }
+  takedownDefMul() { return 0.6 + ((this.data.grappling && this.data.grappling.takedownDef) || 5) * 0.06; }
+  clinchMul() { return 0.6 + ((this.data.grappling && this.data.grappling.clinch) || 5) * 0.06; }
+
+  isGrappling() {
+    return [
+      'clinch', 'ground_top', 'ground_bottom', 'sub_offense', 'sub_defense',
+      'takedown', 'takedown_shoot', 'takedown_defend', 'sprawl',
+    ].includes(this.state);
+  }
 
   faceTarget(targetX) {
     if (!this.isActionable()) return;
@@ -96,10 +135,31 @@ export class FighterState {
   }
 
   startAttack(kind) {
-    if (!this.isActionable()) return false;
-    if (this.state === 'jump' && kind !== 'kick' && kind !== 'special') return false;
     const a = ATTACK_DATA[kind];
     if (!a) return false;
+    // Clinch attacks: only valid when in clinch state.
+    if (a.clinch) {
+      if (this.state !== 'clinch') return false;
+      if (this.stamina < a.stam) return false;
+      this.stamina -= a.stam;
+      this.attack = { kind, ...a };
+      this.attackFrame = 0;
+      this.hitConfirm = false;
+      // We don't change state out of 'clinch' — animations are sub-played via attackFrame.
+      return true;
+    }
+    // Ground attacks: only valid when in mount/top.
+    if (a.ground) {
+      if (this.state !== 'ground_top') return false;
+      if (this.stamina < a.stam) return false;
+      this.stamina -= a.stam;
+      this.attack = { kind, ...a };
+      this.attackFrame = 0;
+      this.hitConfirm = false;
+      return true;
+    }
+    if (!this.isActionable()) return false;
+    if (this.state === 'jump' && kind !== 'kick' && kind !== 'special') return false;
     if (kind === 'special') {
       if (this.special < this.maxSpecial) return false;
       this.special = 0;
@@ -268,6 +328,17 @@ export class Match {
     this.introPhaseDuration = 0;
     // Referee state (used during intro only).
     this.ref = { x: ARENA.width + 80, y: ARENA.groundY, facing: -1, state: 'walking', armRaised: 0, animTime: 0 };
+
+    // Active grapple session — null when both fighters are striking on their feet.
+    // {
+    //   top, bottom,           // FighterState refs (for ground positions)
+    //   a, b,                  // FighterState refs (for clinch — symmetric)
+    //   position: 'clinch'|'mount'|'guard'|'back_mount'|'side_control'|'front_headlock',
+    //   centerX,               // anchor point
+    //   timer,                 // frames in current position
+    //   submission: null | { kind, attacker, defender, progress, escapeRequired }
+    // }
+    this.grapple = null;
   }
 
   pushEvent(type, payload = {}) {
@@ -297,6 +368,10 @@ export class Match {
     this.ref.x = ARENA.width + 80;
     this.ref.state = 'idle';
     this.ref.armRaised = 0;
+    // Clear grapple state from any prior round.
+    this.grapple = null;
+    this.p1.grappleRole = null; this.p2.grappleRole = null;
+    this.p1.taps = 0; this.p2.taps = 0;
   }
 
   _updateReferee() {
@@ -384,6 +459,460 @@ export class Match {
     }
   }
 
+  // -------------- Grappling API --------------
+
+  // Attempt to initiate a clinch between a (attacker) and b (opponent).
+  // Succeeds when close enough and neither is mid-action.
+  tryClinch(a, b) {
+    if (this.grapple) return false;
+    if (!a.isActionable() || !b.isActionable()) return false;
+    if (b.state === 'attack' || a.state === 'attack') return false;
+    const dist = Math.abs(a.x - b.x);
+    if (dist > 110) return false;
+    if (a.stamina < 10) return false;
+    a.stamina -= 8;
+    // Opponent can deny with high clinch resistance + takedown defense
+    const resist = (b.clinchMul() + b.takedownDefMul()) * 0.5 * (b.stamina > 0 ? 1 : 0.5);
+    const push = a.clinchMul() * 1.1;
+    if (Math.random() * (push + resist) > push) {
+      // Failed — briefly stumble
+      a.state = 'idle';
+      a.cooldown = 12;
+      return false;
+    }
+    const centerX = (a.x + b.x) / 2;
+    a.state = 'clinch'; b.state = 'clinch';
+    a.x = centerX - 28 * a.facing; b.x = centerX - 28 * b.facing;
+    a.vx = 0; b.vx = 0;
+    a.facing = b.x > a.x ? 1 : -1; b.facing = a.x > b.x ? 1 : -1;
+    a.grappleRole = 'clinch_a'; b.grappleRole = 'clinch_b';
+    a.attack = null; a.attackFrame = 0;
+    b.attack = null; b.attackFrame = 0;
+    this.grapple = { a, b, position: 'clinch', centerX, timer: 0, submission: null };
+    this.pushEvent('clinch_start', { x: centerX });
+    SFX.block();
+    return true;
+  }
+
+  // Break out of clinch (must have stamina; success tied to clinch defense)
+  tryBreakClinch(f) {
+    const g = this.grapple;
+    if (!g || g.position !== 'clinch') return false;
+    const other = g.a === f ? g.b : g.a;
+    if (f.stamina < 8) return false;
+    f.stamina -= 8;
+    const push = f.clinchMul();
+    const hold = other.clinchMul() * 1.05;
+    if (Math.random() * (push + hold) > push) return false;
+    this._endClinch('break');
+    return true;
+  }
+
+  _endClinch(reason, except = null) {
+    const g = this.grapple;
+    if (!g) return;
+    // Determine separation: who is on which side?
+    if (g.a && g.a !== except) { g.a.state = 'idle'; g.a.grappleRole = null; g.a.attack = null; g.a.attackFrame = 0; g.a.cooldown = 10; }
+    else if (g.a === except) { g.a.grappleRole = null; g.a.attack = null; g.a.attackFrame = 0; }
+    if (g.b && g.b !== except) { g.b.state = 'idle'; g.b.grappleRole = null; g.b.attack = null; g.b.attackFrame = 0; g.b.cooldown = 10; }
+    else if (g.b === except) { g.b.grappleRole = null; g.b.attack = null; g.b.attackFrame = 0; }
+    // Push them apart slightly
+    if (g.a && g.b) {
+      const dir = g.a.x < g.b.x ? -1 : 1;
+      g.a.vx = dir * 3; g.b.vx = -dir * 3;
+    }
+    this.grapple = null;
+    this.pushEvent('clinch_end', { reason });
+  }
+
+  // Attempt a takedown — initiator must be in clinch (or within 130px for shot).
+  tryTakedown(attacker, defender) {
+    const g = this.grapple;
+    const inClinch = g && (g.a === attacker || g.b === attacker);
+    if (!inClinch) {
+      // level change / shot: needs stamina + proximity
+      const dist = Math.abs(attacker.x - defender.x);
+      if (dist > 150) return false;
+      if (!attacker.isActionable()) return false;
+      if (attacker.stamina < 22) return false;
+      attacker.stamina -= 18;
+    } else {
+      if (attacker.stamina < 18) return false;
+      attacker.stamina -= 14;
+    }
+    const skill = attacker.wrestlingMul() * 1.1 + (attacker.specialty.clinchAffinity * 0.4);
+    const def = defender.takedownDefMul() + (defender.specialty.groundAffinity * 0.2);
+    const success = Math.random() * (skill + def) < skill;
+    if (!success) {
+      // sprawled — attacker briefly on knees, defender gains momentum
+      if (inClinch) this._endClinch('sprawl');
+      attacker.state = 'sprawl';
+      attacker.cooldown = 40;
+      attacker.stunFrames = 30;
+      defender.special = Math.min(defender.maxSpecial, defender.special + 8);
+      this.pushEvent('takedown_failed', { attacker: attacker.side });
+      SFX.block();
+      return false;
+    }
+    // Success — ground position determined by attacker vs. defender ground skill.
+    // If the defender is a strong BJJ/guard player they pull guard on the way down,
+    // giving the bottom fighter real submission threats (triangle / armbar / kimura).
+    let pos;
+    if (defender.specialty.groundAffinity >= 0.75 && defender.specialty.groundAffinity >= attacker.specialty.groundAffinity) {
+      pos = 'guard';
+    } else if (attacker.specialty.groundAffinity > 0.7) {
+      pos = 'mount';
+    } else {
+      pos = 'side_control';
+    }
+    if (inClinch) this.grapple = null;
+    // Play a takedown shoot/drive/slam animation before settling on the ground.
+    // The animation drives both fighters' poses for ~36 frames, then we lock
+    // into the proper top/bottom ground state.
+    this._startTakedownAnim(attacker, defender, pos);
+    this.pushEvent('takedown_success', { attacker: attacker.side, position: pos });
+    SFX.hitHard();
+    return true;
+  }
+
+  // Multi-phase takedown sequence: shoot (low level change) → drive (lift/turn)
+  // → slam (crash to mat). The grapple object holds the animation state until
+  // it ticks down, at which point we settle into _startGround.
+  _startTakedownAnim(attacker, defender, targetPos) {
+    const centerX = (attacker.x + defender.x) / 2;
+    attacker.x = centerX; defender.x = centerX;
+    attacker.state = 'takedown_shoot';
+    defender.state = 'takedown_defend';
+    attacker.grappleRole = 'top'; defender.grappleRole = 'bottom';
+    attacker.attack = null; attacker.attackFrame = 0;
+    defender.attack = null; defender.attackFrame = 0;
+    attacker.vx = 0; attacker.vy = 0; defender.vx = 0; defender.vy = 0;
+    // Total animation length: 12 (shoot) + 14 (drive) + 12 (slam) = 38 frames.
+    this.grapple = {
+      top: attacker, bottom: defender, position: targetPos, centerX,
+      timer: 0, submission: null,
+      takedownAnim: { frame: 0, totalFrames: 38, shootEnd: 12, driveEnd: 26 },
+    };
+  }
+
+  _startGround(top, bottom, position) {
+    const centerX = (top.x + bottom.x) / 2;
+    top.x = centerX; bottom.x = centerX;
+    top.state = 'ground_top'; bottom.state = 'ground_bottom';
+    top.grappleRole = 'top'; bottom.grappleRole = 'bottom';
+    top.attack = null; top.attackFrame = 0;
+    bottom.attack = null; bottom.attackFrame = 0;
+    top.vx = 0; top.vy = 0; bottom.vx = 0; bottom.vy = 0;
+    this.grapple = { top, bottom, position, centerX, timer: 0, submission: null };
+  }
+
+  // Bottom attempts to get back to feet / sweep.
+  tryStandUp(f) {
+    const g = this.grapple;
+    if (!g || !g.top || !g.bottom) return false;
+    if (g.submission) return false;
+    const bottom = g.bottom;
+    if (f !== bottom) return false;
+    if (bottom.stamina < 12) return false;
+    bottom.stamina -= 10;
+    const esc = bottom.wrestlingMul() + bottom.takedownDefMul();
+    const hold = g.top.wrestlingMul() * 1.2 + (g.timer > 180 ? -0.3 : 0); // harder if they're tired/pinned long
+    if (Math.random() * (esc + hold) > esc) return false;
+    // Stand up
+    this._endGround('standup');
+    return true;
+  }
+
+  // Top attempts to pass guard / advance position; reserved for future.
+  tryPositionAdvance(f) {
+    const g = this.grapple;
+    if (!g || !g.top || !g.bottom) return false;
+    if (f !== g.top) return false;
+    if (g.position === 'mount') {
+      // Spin to back mount if attacker rolls under
+      const chance = f.wrestlingMul() * 0.7 - g.bottom.takedownDefMul() * 0.4;
+      if (Math.random() < 0.2 + chance * 0.2) {
+        g.position = 'back_mount';
+        this.pushEvent('position_advance', { position: 'back_mount' });
+        return true;
+      }
+    } else if (g.position === 'side_control') {
+      if (f.stamina < 8) return false;
+      f.stamina -= 6;
+      g.position = 'mount';
+      this.pushEvent('position_advance', { position: 'mount' });
+      return true;
+    } else if (g.position === 'guard') {
+      // Pass guard → side control. Success depends on top's wrestling vs. bottom's BJJ.
+      if (f.stamina < 10) return false;
+      f.stamina -= 8;
+      const pass = f.wrestlingMul() * 1.1;
+      const hold = g.bottom.submissionMul() * 1.0 + g.bottom.specialty.groundAffinity * 0.3;
+      if (Math.random() * (pass + hold) < pass) {
+        g.position = 'side_control';
+        this.pushEvent('position_advance', { position: 'side_control' });
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  _endGround(reason, except = null) {
+    const g = this.grapple;
+    if (!g) return;
+    if (g.top && g.top !== except) { g.top.state = 'idle'; g.top.grappleRole = null; g.top.attack = null; g.top.attackFrame = 0; g.top.cooldown = 14; }
+    else if (g.top === except) { g.top.grappleRole = null; g.top.attack = null; g.top.attackFrame = 0; }
+    if (g.bottom && g.bottom !== except) { g.bottom.state = 'idle'; g.bottom.grappleRole = null; g.bottom.attack = null; g.bottom.attackFrame = 0; g.bottom.cooldown = 14; }
+    else if (g.bottom === except) { g.bottom.grappleRole = null; g.bottom.attack = null; g.bottom.attackFrame = 0; }
+    // Push apart so they reset to striking range
+    if (g.top && g.bottom) {
+      const topSide = g.top.side === 'p1' ? -1 : 1;
+      g.top.x += topSide * 80; g.bottom.x -= topSide * 80;
+      g.top.facing = g.bottom.x > g.top.x ? 1 : -1;
+      g.bottom.facing = g.top.x > g.bottom.x ? 1 : -1;
+    }
+    this.grapple = null;
+    this.pushEvent('ground_end', { reason });
+  }
+
+  // Attempt to lock in a submission. Valid kinds depend on current position.
+  attemptSubmission(attacker, kind) {
+    const g = this.grapple;
+    if (!g) return false;
+    if (g.submission) return false;
+    const sub = SUBMISSIONS[kind];
+    if (!sub) return false;
+    const pos = g.position;
+    if (!sub.fromPos.includes(pos)) return false;
+    // Attacker must be the correct role
+    const isTop = g.top === attacker;
+    const isBottom = g.bottom === attacker;
+    const isClinchA = g.a === attacker;
+    if (pos === 'front_headlock' && !isClinchA && g.a !== attacker && g.b !== attacker) return false;
+    if ((pos === 'mount' || pos === 'back_mount' || pos === 'side_control') && !isTop) return false;
+    if (pos === 'guard' && !isBottom) return false;
+    const defender = attacker === g.a ? g.b : attacker === g.b ? g.a : attacker === g.top ? g.bottom : g.top;
+    if (attacker.stamina < 14) return false;
+    attacker.stamina -= 12;
+    const skill = attacker.submissionMul() * 1.2;
+    const def = defender.submissionMul() * 0.85 + defender.takedownDefMul() * 0.5;
+    if (Math.random() * (skill + def) > skill) {
+      // Failed lock-in — costs position for aggressive subs from guard
+      if (pos === 'guard' && isBottom) this._endGround('escape_from_guard');
+      this.pushEvent('submission_failed', { kind });
+      return false;
+    }
+    attacker.state = 'sub_offense';
+    defender.state = 'sub_defense';
+    defender.taps = 0;
+    const escapeRequired = Math.round(sub.escapeBase * (0.6 + Math.random() * 0.4) / defender.submissionMul());
+    g.submission = {
+      kind, attacker, defender,
+      progress: 0,           // builds up while held; if reaches 100 → tap
+      escapeRequired,        // taps needed to escape
+      hold: 0,               // frames held
+      dpsDrain: sub.dps,
+      // Lock-in animation: 24 frames of "wrapping up the limb" before pressure
+      // starts building. The defender can't tap-escape during this window so
+      // the attacker visibly secures the hold first.
+      lockIn: { frame: 0, totalFrames: 24 },
+    };
+    this.pushEvent('submission_start', { kind, attacker: attacker.side });
+    SFX.special();
+    return true;
+  }
+
+  // Defender taps escape button — each tap reduces escapeRequired counter.
+  submissionTap(defender) {
+    const g = this.grapple;
+    if (!g || !g.submission) return false;
+    if (g.submission.defender !== defender) return false;
+    // Taps don't count while the attacker is still locking in the hold.
+    if (g.submission.lockIn) return false;
+    if (defender.stamina < 1) return false;
+    defender.stamina = Math.max(0, defender.stamina - 0.8);
+    defender.taps = (defender.taps || 0) + 1;
+    if (defender.taps >= g.submission.escapeRequired) {
+      // Escape!
+      g.submission.attacker.state = 'ground_top';
+      g.submission.defender.state = 'ground_bottom';
+      g.submission = null;
+      this.pushEvent('submission_escape', { defender: defender.side });
+      SFX.block();
+      return true;
+    }
+    return false;
+  }
+
+  _updateGrapple() {
+    const g = this.grapple;
+    if (!g) return;
+    g.timer++;
+    // Gradually tire both fighters while grappling (cardio burn)
+    const burn = 0.04;
+    if (g.a) g.a.stamina = Math.max(0, g.a.stamina - burn);
+    if (g.b) g.b.stamina = Math.max(0, g.b.stamina - burn);
+    if (g.top) g.top.stamina = Math.max(0, g.top.stamina - burn * 0.6);
+    if (g.bottom) g.bottom.stamina = Math.max(0, g.bottom.stamina - burn * 1.2);
+
+    // Takedown animation: tick through shoot/drive/slam phases, then lock in ground.
+    if (g.takedownAnim) {
+      const ta = g.takedownAnim;
+      ta.frame++;
+      // Lock the participants in place so physics doesn't push them apart.
+      // Expose frame on fighters so the renderer can read animation progress.
+      if (g.top) {
+        g.top.x = g.centerX; g.top.y = ARENA.groundY; g.top.vx = 0; g.top.vy = 0;
+        g.top.takedownFrame = ta.frame; g.top.takedownTotal = ta.totalFrames;
+        g.top.takedownPhase = ta.frame < ta.shootEnd ? 'shoot' : ta.frame < ta.driveEnd ? 'drive' : 'slam';
+      }
+      if (g.bottom) {
+        g.bottom.x = g.centerX; g.bottom.y = ARENA.groundY; g.bottom.vx = 0; g.bottom.vy = 0;
+        g.bottom.takedownFrame = ta.frame; g.bottom.takedownTotal = ta.totalFrames;
+        g.bottom.takedownPhase = ta.frame < ta.shootEnd ? 'shoot' : ta.frame < ta.driveEnd ? 'drive' : 'slam';
+      }
+      // Brief screen shake on impact (slam frame).
+      if (ta.frame === ta.driveEnd + 1) {
+        this.shake = Math.max(this.shake, 8);
+        SFX.hitHard();
+      }
+      if (ta.frame >= ta.totalFrames) {
+        // Settle into final ground position. Clear takedown markers.
+        const targetPos = g.position;
+        const top = g.top, bottom = g.bottom;
+        if (top) { top.takedownFrame = 0; top.takedownPhase = null; }
+        if (bottom) { bottom.takedownFrame = 0; bottom.takedownPhase = null; }
+        this._startGround(top, bottom, targetPos);
+      }
+      return;
+    }
+
+    // Submission lock-in animation: brief wrap-up phase before submission ticks.
+    if (g.submission && g.submission.lockIn) {
+      const li = g.submission.lockIn;
+      li.frame++;
+      // Expose progress on attacker so render can show the wrap-up animation.
+      const att = g.submission.attacker;
+      const def = g.submission.defender;
+      if (att) { att.subLockFrame = li.frame; att.subLockTotal = li.totalFrames; att.subLockKind = g.submission.kind; }
+      if (def) { def.subLockFrame = li.frame; def.subLockTotal = li.totalFrames; def.subLockKind = g.submission.kind; }
+      if (li.frame >= li.totalFrames) {
+        g.submission.lockIn = null;
+        if (att) { att.subLockFrame = 0; att.subLockTotal = 0; att.subLockKind = null; }
+        if (def) { def.subLockFrame = 0; def.subLockTotal = 0; def.subLockKind = null; }
+      }
+      // Don't tick submission progress / apply damage during lock-in.
+      return;
+    }
+
+    // Submission tick: progress builds toward 100, applies damage.
+    if (g.submission) {
+      const s = g.submission;
+      s.hold++;
+      // Submission pressure builds faster with attacker skill / defender fatigue
+      const pressure = 0.35 + (s.attacker.submissionMul() - s.defender.submissionMul()) * 0.25;
+      const fatigue = s.defender.stamina <= 0 ? 0.6 : 0;
+      s.progress = Math.min(100, s.progress + pressure + fatigue);
+      // Chip damage representing real submission discomfort
+      s.defender.hp = Math.max(0, s.defender.hp - s.dpsDrain);
+      if (s.defender.hp <= 0 || s.progress >= 100) {
+        // Tap / finish
+        s.defender.hp = 0;
+        s.defender.state = 'down';
+        s.defender.downTime = 90;
+        this.pushEvent('submission_finish', { kind: s.kind, winner: s.attacker.side });
+        SFX.ko();
+        this.grapple = null;
+        return;
+      }
+    }
+
+    // Clinch handling: resolve active attacks (clinch knee/elbow/dirty punch) directly.
+    if (g.position === 'clinch' && g.a && g.b) {
+      // Keep positions locked within the clinch window
+      g.a.x = g.centerX - 28 * g.a.facing;
+      g.b.x = g.centerX - 28 * g.b.facing;
+      g.a.y = ARENA.groundY; g.b.y = ARENA.groundY;
+      // Resolve each side's attack frames
+      this._resolveClinchAttack(g.a, g.b);
+      this._resolveClinchAttack(g.b, g.a);
+      // Ref break if very long and nothing happening (>6s no attacks) — simplify: auto break at 360f
+      if (g.timer > 360) this._endClinch('ref_break');
+    }
+
+    // Ground top & pound resolution
+    if ((g.position === 'mount' || g.position === 'back_mount' || g.position === 'side_control') && g.top && g.bottom) {
+      g.top.x = g.centerX; g.bottom.x = g.centerX;
+      g.top.y = ARENA.groundY; g.bottom.y = ARENA.groundY;
+      this._resolveGroundAttack(g.top, g.bottom);
+    }
+  }
+
+  _resolveClinchAttack(attacker, defender) {
+    if (!attacker.attack) return;
+    const a = attacker.attack;
+    attacker.attackFrame++;
+    if (attacker.attackFrame === a.startup + 1 && !attacker.hitConfirm) {
+      // Damage application: roughly halved vs strike (clinch proximity, less hip rotation than full shot)
+      const baseDmg = Math.round(a.damage * attacker.powerMul() * 0.95);
+      // Defender can't block mid-clinch (both hands tied) but has some defense reduction.
+      const actualDmg = Math.round(baseDmg * (1.35 - defender.defenseMul() * 0.4));
+      defender.hp = Math.max(0, defender.hp - actualDmg);
+      defender.special = Math.min(defender.maxSpecial, defender.special + 4);
+      attacker.special = Math.min(attacker.maxSpecial, attacker.special + (a.meter || 0));
+      this.shake = Math.max(this.shake, 5);
+      this.hitstop = 2;
+      this.pushEvent('hit', {
+        attacker: attacker.side, defender: defender.side,
+        dmg: actualDmg, blocked: false, kind: a.kind,
+        x: defender.x, y: defender.y - 100,
+      });
+      attacker.hitConfirm = true;
+      if (a.damage >= 8) SFX.hitHard(); else SFX.hit();
+      if (defender.hp <= 0) {
+        defender.state = 'down'; defender.downTime = 90; defender.vy = -6; defender.vx = 6 * (attacker.x < defender.x ? 1 : -1);
+        SFX.ko();
+        if (this.grapple) this._endClinch('ko', defender);
+        return;
+      }
+    }
+    if (attacker.attackFrame >= a.startup + a.active + a.recovery) {
+      attacker.attack = null; attacker.attackFrame = 0; attacker.hitConfirm = false;
+    }
+  }
+
+  _resolveGroundAttack(attacker, defender) {
+    if (!attacker.attack) return;
+    const a = attacker.attack;
+    attacker.attackFrame++;
+    if (attacker.attackFrame === a.startup + 1 && !attacker.hitConfirm) {
+      const baseDmg = Math.round(a.damage * attacker.powerMul() * 1.05);
+      const actualDmg = Math.round(baseDmg * (1.4 - defender.defenseMul() * 0.3));
+      defender.hp = Math.max(0, defender.hp - actualDmg);
+      defender.special = Math.min(defender.maxSpecial, defender.special + 3);
+      attacker.special = Math.min(attacker.maxSpecial, attacker.special + (a.meter || 0));
+      this.shake = Math.max(this.shake, 5);
+      this.hitstop = 2;
+      this.pushEvent('hit', {
+        attacker: attacker.side, defender: defender.side,
+        dmg: actualDmg, blocked: false, kind: a.kind,
+        x: defender.x, y: defender.y - 20,
+      });
+      attacker.hitConfirm = true;
+      SFX.hit();
+      if (defender.hp <= 0) {
+        defender.state = 'down'; defender.downTime = 90;
+        SFX.ko();
+        this._endGround('ko', defender);
+        return;
+      }
+    }
+    if (attacker.attackFrame >= a.startup + a.active + a.recovery) {
+      attacker.attack = null; attacker.attackFrame = 0; attacker.hitConfirm = false;
+    }
+  }
+
   step(dt) {
     this.tick++;
     if (this.hitstop > 0) { this.hitstop--; return; }
@@ -438,8 +967,13 @@ export class Match {
 
     this.updateFighter(this.p1, this.p2);
     this.updateFighter(this.p2, this.p1);
-    this.checkHits(this.p1, this.p2);
-    this.checkHits(this.p2, this.p1);
+    // Grapple resolution (clinch/ground damage + submissions)
+    this._updateGrapple();
+    // Normal striking hit checks only when not both locked in grapple
+    if (!this.grapple) {
+      this.checkHits(this.p1, this.p2);
+      this.checkHits(this.p2, this.p1);
+    }
     this.regenStamina(this.p1);
     this.regenStamina(this.p2);
 
@@ -472,6 +1006,7 @@ export class Match {
     if (f.state === 'idle' || f.state === 'crouch') rate = 0.45;
     else if (f.state === 'walk') rate = 0.3;
     else if (f.state === 'block') rate = -0.25;
+    else if (f.isGrappling && f.isGrappling()) rate = -0.05;  // cardio cost
     f.stamina = Math.max(0, Math.min(f.maxStamina, f.stamina + rate));
   }
 
@@ -509,12 +1044,29 @@ export class Match {
       if (f.downTime > 0) f.downTime--;
     }
 
-    // Always face opponent unless mid-attack/hit
-    if (['idle', 'walk', 'crouch', 'block', 'jump'].includes(f.state)) {
-      f.facing = opp.x > f.x ? 1 : -1;
+    // Sprawl recovery (failed TD defense from attacker side).
+    if (f.state === 'sprawl') {
+      if (f.cooldown <= 0 && f.stunFrames <= 0) {
+        f.state = 'idle';
+      }
     }
 
-    this.applyPhysics(f);
+    // Always face opponent unless mid-attack/hit/grapple
+    if (['idle', 'walk', 'crouch', 'block', 'jump'].includes(f.state)) {
+      f.facing = opp.x > f.x ? 1 : -1;
+      // Direction-aware walk animation (forward vs back step)
+      if (f.state === 'walk') {
+        const towardOpp = Math.sign(opp.x - f.x);
+        f.movingDirection = Math.sign(f.vx) === towardOpp ? 1 : Math.sign(f.vx) === 0 ? 0 : -1;
+      } else {
+        f.movingDirection = 0;
+      }
+    }
+
+    // Skip physics/positioning for grapple-locked states (engine manages them in _updateGrapple)
+    if (!['clinch', 'ground_top', 'ground_bottom', 'sub_offense', 'sub_defense'].includes(f.state)) {
+      this.applyPhysics(f);
+    }
     f.animTime++;
   }
 

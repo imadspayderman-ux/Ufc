@@ -401,16 +401,49 @@ export class Renderer {
     if (match.state === 'intro') {
       drawIntroSpotlights(ctx, match);
     }
-    // depth: draw fighter further-from-camera first; we use side P2 as background
-    if (match.p1.x < match.p2.x) {
-      this.drawFighter(ctx, match.p2, match);
-      this.drawFighter(ctx, match.p1, match);
+    // Grapple-aware fighter draw ordering
+    if (match.grapple && match.grapple.position !== 'clinch') {
+      // Ground / takedown: draw the bottom fighter first (beneath), then top overlay.
+      // We also nudge the bottom fighter slightly off-centre so the prone body is
+      // visible alongside the kneeling top fighter (rather than perfectly stacked).
+      const bottomF = match.grapple.bottom;
+      const topF = match.grapple.top;
+      if (bottomF) {
+        ctx.save();
+        // Once on the ground, slide bottom fighter so head/torso extends to the
+        // side opposite where top is leaning. During the slam phase keep them
+        // centred (they're still mid-air falling).
+        const isFinalGround = bottomF.state === 'ground_bottom' || bottomF.state === 'sub_defense' || bottomF.state === 'down';
+        if (isFinalGround) {
+          // Bottom fighter's head is drawn at headOffset.x = -56 in local coords.
+          // Push body so the supine torso pokes out to the LEFT of the top fighter
+          // (relative to top facing). Use top.facing to determine side.
+          const topFacing = topF ? topF.facing : 1;
+          const offset = -28 * topFacing;
+          ctx.translate(offset, 0);
+        }
+        this.drawFighter(ctx, bottomF, match);
+        ctx.restore();
+      }
+      if (topF) this.drawFighter(ctx, topF, match);
+      // Submission visual overlay
+      this.drawGrappleOverlay(ctx, match);
     } else {
-      this.drawFighter(ctx, match.p1, match);
-      this.drawFighter(ctx, match.p2, match);
+      // depth: draw fighter further-from-camera first; we use side P2 as background
+      if (match.p1.x < match.p2.x) {
+        this.drawFighter(ctx, match.p2, match);
+        this.drawFighter(ctx, match.p1, match);
+      } else {
+        this.drawFighter(ctx, match.p1, match);
+        this.drawFighter(ctx, match.p2, match);
+      }
+      if (match.grapple && match.grapple.position === 'clinch') {
+        this.drawGrappleOverlay(ctx, match);
+      }
     }
     // Referee on top of fighters (he's the focal point during intro).
-    if (match.state === 'intro' && match.ref && match.ref.x < ARENA.width + 100) {
+    // Hidden whenever fighters are grappling so he doesn't overlap the clinch/mount poses.
+    if (match.state === 'intro' && !match.grapple && match.ref && match.ref.x < ARENA.width + 100) {
       drawReferee(ctx, match.ref);
     }
     this.drawEffects(ctx);
@@ -423,7 +456,94 @@ export class Renderer {
     if (match.state === 'intro') {
       drawIntroBanner(ctx, match);
     }
+    // Grapple state banner (position + submission progress)
+    if (match.grapple) {
+      drawGrappleHUD(ctx, match);
+    }
   }
+
+  // Draw wrapping arms / submission locks between grapple participants.
+  drawGrappleOverlay(ctx, match) {
+    const g = match.grapple;
+    if (!g) return;
+    ctx.save();
+    if (g.position === 'clinch' && g.a && g.b) {
+      // Draw interlocked arms as semi-opaque curves
+      const ay = g.a.y - 180;
+      const by = g.b.y - 180;
+      const midX = (g.a.x + g.b.x) / 2;
+      ctx.strokeStyle = 'rgba(30,30,30,0.55)';
+      ctx.lineWidth = 10;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(g.a.x + 28 * g.a.facing, ay);
+      ctx.quadraticCurveTo(midX, ay - 22, g.b.x + 28 * g.b.facing, by);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(g.a.x + 28 * g.a.facing, ay + 14);
+      ctx.quadraticCurveTo(midX, ay + 6, g.b.x + 28 * g.b.facing, by + 14);
+      ctx.stroke();
+    }
+    // Ground submission lock visual
+    if (g.submission && g.top && g.bottom) {
+      const s = g.submission;
+      const cx = g.centerX;
+      const cy = ARENA.groundY - 60;
+      ctx.strokeStyle = 'rgba(240,60,60,0.8)';
+      ctx.lineWidth = 5;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, 40, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Submission name text (subtle)
+      ctx.fillStyle = 'rgba(255,240,240,0.9)';
+      ctx.font = 'bold 14px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText(s.kind.toUpperCase().replace(/_/g, ' '), cx, cy - 52);
+    }
+    ctx.restore();
+  }
+}
+
+function drawGrappleHUD(ctx, match) {
+  const g = match.grapple;
+  if (!g) return;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 18px system-ui';
+  ctx.fillStyle = '#ffcc44';
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.lineWidth = 3;
+  const label = g.position.toUpperCase().replace(/_/g, ' ');
+  const x = ARENA.width / 2;
+  ctx.strokeText(label, x, 130);
+  ctx.fillText(label, x, 130);
+  if (g.submission) {
+    const s = g.submission;
+    // Progress bar (attacker's sub lock progress)
+    const bw = 260, bh = 14;
+    const bx = x - bw / 2, by = 142;
+    ctx.fillStyle = 'rgba(20,0,0,0.85)';
+    ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+    ctx.fillStyle = '#2a0a0a';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = '#ff3344';
+    ctx.fillRect(bx, by, bw * (s.progress / 100), bh);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px system-ui';
+    ctx.fillText(s.kind.toUpperCase().replace(/_/g, ' '), x, by - 4);
+    // Tap bar (defender escape)
+    const taps = s.defender.taps || 0;
+    const tpct = Math.min(1, taps / s.escapeRequired);
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(bx, by + bh + 4, bw, 8);
+    ctx.fillStyle = '#44aaff';
+    ctx.fillRect(bx, by + bh + 4, bw * tpct, 8);
+    ctx.fillStyle = '#88ccff';
+    ctx.font = 'bold 10px system-ui';
+    ctx.fillText(`TAP TO ESCAPE (${taps}/${s.escapeRequired})`, x, by + bh + 22);
+  }
+  ctx.restore();
 }
 
 // Compute pose: positions for all body parts in fighter-local coords (origin = feet, +y down? we use +y down).
@@ -455,10 +575,13 @@ function computePose(f, t) {
     },
   };
 
+  // Weight-class + specialty aware breathing/walk cadence.
+  const cadence = (f.data && f.specialty && f.specialty.walkCadence) || 1.0;
+  const bobAmp = (f.weightClass && f.weightClass.footstepBob) || 1.0;
   // Idle breathing — subtle sine sway on chest and head.
   if (f.state === 'idle' || f.state === 'walk') {
     const breath = Math.sin(t * 0.11) * 1.8;
-    const bob = Math.sin(t * 0.2) * 1.2;
+    const bob = Math.sin(t * 0.2) * 1.2 * bobAmp;
     pose.pelvis.y -= bob + breath * 0.3;
     pose.headOffset.y -= bob + breath * 0.2;
     // Shoulder sway for back-and-forth of breathing.
@@ -466,35 +589,48 @@ function computePose(f, t) {
     pose.armFront.shoulderY += breath * 0.3;
   }
   if (f.state === 'walk') {
-    // Realistic stride: weight shifts, heel-toe plant, counter-phase arm swing, pelvis/torso twist.
-    const stride = Math.sin(t * 0.32);
+    // Direction-aware walk: forward = confident stride; backward = shuffle step w/ hands high.
+    const dir = typeof f.movingDirection === 'number' ? f.movingDirection : 1;
+    const retreat = dir < 0;
+    const strideFreq = 0.32 * cadence * (retreat ? 0.7 : 1.0);
+    const strideMag = retreat ? 0.6 : 1.0;
+    const stride = Math.sin(t * strideFreq) * strideMag;
     const strideAbs = Math.abs(stride);
     const liftR = Math.max(0, stride);        // lead leg lifts on positive phase
     const liftL = Math.max(0, -stride);       // back leg lifts on negative phase
     // Foot plant — lifted foot tilts on toe/heel via footY offset
-    pose.legR.footX = 24 * bd + stride * 16;
-    pose.legR.footY = -liftR * 16;
+    pose.legR.footX = 24 * bd + stride * (retreat ? 10 : 16);
+    pose.legR.footY = -liftR * 16 * bobAmp;
     pose.legR.kneeX = 16 * bd + stride * 6;
-    pose.legR.kneeY = -42 - liftR * 12;
-    pose.legL.footX = -20 * bd + stride * 16;
-    pose.legL.footY = -liftL * 16;
+    pose.legR.kneeY = -42 - liftR * 14 * bobAmp;   // higher knee lift for lighter fighters
+    pose.legL.footX = -20 * bd + stride * (retreat ? 10 : 16);
+    pose.legL.footY = -liftL * 16 * bobAmp;
     pose.legL.kneeX = -14 * bd + stride * 6;
-    pose.legL.kneeY = -42 - liftL * 12;
+    pose.legL.kneeY = -42 - liftL * 14 * bobAmp;
     // Pelvis rise-fall (mid-step = low, step-plant = high), slight twist.
-    pose.pelvis.y = -82 + strideAbs * 2 - 2;
-    pose.pelvis.x = stride * 2;
-    pose.torsoAngle = -stride * 0.05;
-    // Arm swing counter-phase (lead arm back when lead leg forward).
-    pose.armFront.handX = 26 - stride * 18;
-    pose.armFront.handY = -128 + strideAbs * 4;
-    pose.armFront.elbowX = 20 * bd - stride * 8;
-    pose.armFront.elbowY = -128 + strideAbs * 2;
-    pose.armBack.handX = 0 + stride * 18;
-    pose.armBack.handY = -128 + strideAbs * 4;
-    pose.armBack.elbowX = -14 * bd + stride * 8;
-    pose.armBack.elbowY = -125 + strideAbs * 2;
+    pose.pelvis.y = -82 + strideAbs * 2 * bobAmp - 2;
+    pose.pelvis.x = stride * (retreat ? 1 : 2);
+    // Heavier fighters lean forward slightly; retreat tilts torso back.
+    const lean = (1 - bobAmp) * 0.12 + (retreat ? -0.03 : 0.02);
+    pose.torsoAngle = -stride * 0.05 + lean;
+    // Retreat = hands stay in higher guard; advance = natural arm swing (counter-phase).
+    if (retreat) {
+      pose.armFront.handX = 16; pose.armFront.handY = -152;
+      pose.armFront.elbowX = 14 * bd; pose.armFront.elbowY = -140;
+      pose.armBack.handX = 8;  pose.armBack.handY = -150;
+      pose.armBack.elbowX = -10 * bd; pose.armBack.elbowY = -138;
+    } else {
+      pose.armFront.handX = 26 - stride * 18;
+      pose.armFront.handY = -128 + strideAbs * 4;
+      pose.armFront.elbowX = 20 * bd - stride * 8;
+      pose.armFront.elbowY = -128 + strideAbs * 2;
+      pose.armBack.handX = 0 + stride * 18;
+      pose.armBack.handY = -128 + strideAbs * 4;
+      pose.armBack.elbowX = -14 * bd + stride * 8;
+      pose.armBack.elbowY = -125 + strideAbs * 2;
+    }
     // Head bobs slightly with stride
-    pose.headOffset.y = -152 * ht + strideAbs * 2 - 2;
+    pose.headOffset.y = -152 * ht + strideAbs * 2 * bobAmp - 2;
   }
   if (f.state === 'crouch') {
     pose.pelvis.y = -52;
@@ -539,6 +675,243 @@ function computePose(f, t) {
     pose.legR.hipX = 30; pose.legR.hipY = -10; pose.legR.kneeX = 60; pose.legR.kneeY = -16; pose.legR.footX = 90; pose.legR.footY = -10;
     pose.armBack.shoulderX = 10; pose.armBack.shoulderY = -22; pose.armBack.elbowX = -16; pose.armBack.elbowY = -16; pose.armBack.handX = -38; pose.armBack.handY = -10;
     pose.armFront.shoulderX = 12; pose.armFront.shoulderY = -28; pose.armFront.elbowX = -10; pose.armFront.elbowY = -22; pose.armFront.handX = -32; pose.armFront.handY = -16;
+  }
+  if (f.state === 'takedown_shoot') {
+    // Attacker: shoot in low (level change) → drive forward (lift) → slam.
+    const phase = f.takedownPhase || 'shoot';
+    const totalFrame = f.takedownFrame || 0;
+    const total = f.takedownTotal || 38;
+    const k = totalFrame / total; // 0..1 across whole takedown
+    if (phase === 'shoot') {
+      // Level change — pelvis drops hard, head + arms drive forward at hip height.
+      const s = totalFrame / 12; // 0..1 within shoot phase
+      pose.pelvis.x = 0; pose.pelvis.y = -36 - 16 * (1 - s);
+      pose.torsoAngle = 0.55 + 0.15 * s;
+      pose.headOffset.x = 26 + 8 * s; pose.headOffset.y = -50 - 6 * s;
+      pose.legL.kneeX = -20 * bd; pose.legL.kneeY = -16; pose.legL.footX = -28 * bd; pose.legL.footY = 0;
+      pose.legR.kneeX =  18 * bd; pose.legR.kneeY = -28 + 8 * s; pose.legR.footX = 32 * bd + 8 * s; pose.legR.footY = 0;
+      pose.armBack.shoulderY = -50; pose.armBack.elbowX = 26; pose.armBack.elbowY = -38; pose.armBack.handX = 44; pose.armBack.handY = -28 - 6 * s;
+      pose.armFront.shoulderY = -52; pose.armFront.elbowX = 30; pose.armFront.elbowY = -36; pose.armFront.handX = 50; pose.armFront.handY = -22 - 6 * s;
+    } else if (phase === 'drive') {
+      // Drive — torso pushing through, arms wrapped around defender's legs/waist.
+      const s = (totalFrame - 12) / 14; // 0..1
+      pose.pelvis.x = -2 + 4 * s; pose.pelvis.y = -54 - 6 * s;
+      pose.torsoAngle = 0.45 - 0.15 * s;
+      pose.headOffset.x = 18; pose.headOffset.y = -90 - 18 * s;
+      pose.legL.kneeX = -22 * bd; pose.legL.kneeY = -36 - 6 * s; pose.legL.footX = -30 * bd; pose.legL.footY = 0;
+      pose.legR.kneeX =  20 * bd; pose.legR.kneeY = -40 - 4 * s; pose.legR.footX =  28 * bd; pose.legR.footY = 0;
+      pose.armBack.elbowX = 14;  pose.armBack.elbowY = -100; pose.armBack.handX = 30 + 4 * s; pose.armBack.handY = -94;
+      pose.armFront.elbowX = 26; pose.armFront.elbowY = -94; pose.armFront.handX = 36 + 4 * s; pose.armFront.handY = -88;
+    } else {
+      // Slam — both crashing down, attacker ending kneeling on top.
+      const s = (totalFrame - 26) / 12; // 0..1
+      pose.pelvis.x = 0; pose.pelvis.y = -54 + 4 * s;
+      pose.torsoAngle = 0.10 - 0.15 * s;
+      pose.headOffset.x = -2; pose.headOffset.y = -126 - 4 * (1 - s);
+      pose.legL.hipX = -10 * bd; pose.legL.hipY = -50; pose.legL.kneeX = -22 * bd; pose.legL.kneeY = -22; pose.legL.footX = -14 * bd; pose.legL.footY = 0;
+      pose.legR.hipX =  10 * bd; pose.legR.hipY = -50; pose.legR.kneeX =  22 * bd; pose.legR.kneeY = -22; pose.legR.footX =  14 * bd; pose.legR.footY = 0;
+      pose.armBack.shoulderY = -100; pose.armBack.elbowY = -130 + 6 * s; pose.armBack.handY = -150 + 6 * s; pose.armBack.handX = 8;
+      pose.armFront.shoulderY = -100; pose.armFront.elbowY = -130 + 6 * s; pose.armFront.handY = -150 + 6 * s; pose.armFront.handX = 22;
+    }
+    // Mark kRaw used so engine devs see we read frame from f
+    void k;
+  }
+  if (f.state === 'takedown_defend') {
+    // Defender: leans back during shoot, lifted during drive, slams to back during slam.
+    const phase = f.takedownPhase || 'shoot';
+    const totalFrame = f.takedownFrame || 0;
+    if (phase === 'shoot') {
+      // Hands pushing down on attacker's head, leaning back.
+      const s = totalFrame / 12;
+      pose.pelvis.x = -2; pose.pelvis.y = -82 + 4 * s;
+      pose.torsoAngle = -0.2 - 0.1 * s;
+      pose.headOffset.x = -8; pose.headOffset.y = -154;
+      pose.legL.footX = -22 * bd; pose.legL.kneeX = -16 * bd; pose.legL.kneeY = -42;
+      pose.legR.footX =  24 * bd + 4 * s; pose.legR.kneeX = 18 * bd; pose.legR.kneeY = -42;
+      pose.armBack.elbowX = -4; pose.armBack.elbowY = -110; pose.armBack.handX = -8; pose.armBack.handY = -90 - 4 * s;
+      pose.armFront.elbowX = 6; pose.armFront.elbowY = -100; pose.armFront.handX = 4; pose.armFront.handY = -82 - 4 * s;
+    } else if (phase === 'drive') {
+      // Being lifted — feet leave ground, body angled up & back.
+      const s = (totalFrame - 12) / 14;
+      pose.pelvis.x = 4; pose.pelvis.y = -82 - 24 * s;
+      pose.torsoAngle = -0.4 - 0.1 * s;
+      pose.headOffset.x = -22; pose.headOffset.y = -136 - 16 * s;
+      // Legs trail behind / up
+      pose.legL.hipY = -78 - 24 * s; pose.legL.kneeX = -28 * bd; pose.legL.kneeY = -42 - 14 * s; pose.legL.footX = -32 * bd; pose.legL.footY = -12 - 8 * s;
+      pose.legR.hipY = -78 - 24 * s; pose.legR.kneeX =  26 * bd; pose.legR.kneeY = -42 - 14 * s; pose.legR.footX =  30 * bd; pose.legR.footY = -8 - 8 * s;
+      // Arms flail up
+      pose.armBack.elbowY = -130 - 8 * s; pose.armBack.handY = -150 - 8 * s; pose.armBack.handX = -16;
+      pose.armFront.elbowY = -120 - 8 * s; pose.armFront.handY = -140 - 8 * s; pose.armFront.handX = -8;
+    } else {
+      // Slam — landed flat on back. Transition into ground_bottom-like shape.
+      pose.pelvis.x = 0; pose.pelvis.y = -14;
+      pose.torsoAngle = 0;
+      pose.headOffset.x = -56; pose.headOffset.y = -18;
+      pose.legL.hipX = 6;  pose.legL.hipY = -14; pose.legL.kneeX = 20; pose.legL.kneeY = -50; pose.legL.footX = 46; pose.legL.footY = -56;
+      pose.legR.hipX = 6;  pose.legR.hipY = -12; pose.legR.kneeX = 22; pose.legR.kneeY = -46; pose.legR.footX = 50; pose.legR.footY = -52;
+      pose.armBack.shoulderX = -36;  pose.armBack.shoulderY = -24; pose.armBack.elbowX = -28; pose.armBack.elbowY = -38; pose.armBack.handX = -10; pose.armBack.handY = -42;
+      pose.armFront.shoulderX = -32; pose.armFront.shoulderY = -30; pose.armFront.elbowX = -18; pose.armFront.elbowY = -44; pose.armFront.handX = 4; pose.armFront.handY = -48;
+    }
+  }
+  if (f.state === 'sprawl') {
+    // Shot defended — attacker on hands and knees, forehead low, butt up.
+    const pulse = (Math.sin(t * 0.25) + 1) * 0.5;
+    pose.pelvis.x = 0; pose.pelvis.y = -40;
+    pose.headOffset.x = 26; pose.headOffset.y = -30;
+    pose.torsoAngle = 0.55;
+    pose.legL.kneeX = -14 * bd; pose.legL.kneeY = -14; pose.legL.footX = -20 * bd; pose.legL.footY = 0;
+    pose.legR.kneeX =  14 * bd; pose.legR.kneeY = -14; pose.legR.footX =  20 * bd; pose.legR.footY = 0;
+    pose.armBack.shoulderY = -50; pose.armBack.elbowY = -22; pose.armBack.elbowX = -8; pose.armBack.handY = -4; pose.armBack.handX = -4;
+    pose.armFront.shoulderY = -50; pose.armFront.elbowY = -22; pose.armFront.elbowX = 18; pose.armFront.handY = -4 + pulse * 1; pose.armFront.handX = 24;
+  }
+  if (f.state === 'clinch') {
+    // Both fighters locked up — wide base, forward lean, arms up in collar-tie / under-hook posture.
+    const pulse = Math.sin(t * 0.25) * 1.2;
+    pose.pelvis.x = 6; pose.pelvis.y = -76 + pulse * 0.5;
+    pose.torsoAngle = 0.12;
+    // Wide base stance
+    pose.legL.footX = -26 * bd; pose.legL.footY = 0; pose.legL.kneeX = -18 * bd; pose.legL.kneeY = -46;
+    pose.legR.footX =  30 * bd; pose.legR.footY = 0; pose.legR.kneeX =  22 * bd; pose.legR.kneeY = -46;
+    // Both arms raised, reaching across the center line toward the opponent.
+    pose.armBack.shoulderX = -24 * bd; pose.armBack.shoulderY = -72 * ht - 82;
+    pose.armBack.elbowX = 4;  pose.armBack.elbowY = -156 + pulse;
+    pose.armBack.handX  = 34; pose.armBack.handY  = -162 + pulse;
+    pose.armFront.shoulderX = 26 * bd; pose.armFront.shoulderY = -72 * ht - 82;
+    pose.armFront.elbowX = 20; pose.armFront.elbowY = -148 + pulse;
+    pose.armFront.handX  = 48; pose.armFront.handY  = -154 + pulse;
+    pose.headOffset.x = 8; pose.headOffset.y = -150 * ht;
+    // Clinch attack overlay (knee / elbow / dirty punch) — animated via f.attack progress
+    if (f.attack) {
+      const ca = f.attack;
+      const total = ca.startup + ca.active + ca.recovery;
+      const kRaw = Math.max(0, Math.min(1, f.attackFrame / total));
+      // Peak around 0.35..0.5 of total (active phase)
+      const peak = f.attackFrame < ca.startup ? (f.attackFrame / ca.startup) :
+                    f.attackFrame < ca.startup + ca.active ? 1 :
+                    1 - (f.attackFrame - ca.startup - ca.active) / ca.recovery;
+      const ease = Math.sin(peak * Math.PI);
+      if (ca.kind === 'clinch_knee') {
+        // Right knee drives up into opponent
+        pose.legR.kneeX = 8 * bd + ease * 22;
+        pose.legR.kneeY = -46 - ease * 62;
+        pose.legR.footX = 16 * bd + ease * 28;
+        pose.legR.footY = -ease * 54;
+        pose.pelvis.y = -80 - ease * 14;
+        pose.torsoAngle = 0.12 + ease * 0.12;
+      } else if (ca.kind === 'clinch_elbow') {
+        // Front elbow swings down/around
+        pose.armFront.elbowX = 12 + ease * 10;
+        pose.armFront.elbowY = -176 - ease * 10;
+        pose.armFront.handX  = 18 + ease * 8;
+        pose.armFront.handY  = -188 - ease * 6;
+      } else if (ca.kind === 'dirty_punch') {
+        pose.armBack.elbowX = -2 + ease * 8;
+        pose.armBack.elbowY = -156 + ease * 6;
+        pose.armBack.handX = 34 + ease * 18;
+        pose.armBack.handY = -162 + ease * 6;
+      }
+    }
+  }
+  if (f.state === 'ground_bottom') {
+    // Lying supine with legs in guard (hips up, knees bent to hook opponent).
+    const breathe = Math.sin(t * 0.12) * 1;
+    pose.pelvis.x = 0; pose.pelvis.y = -14 + breathe * 0.3;
+    pose.torsoAngle = 0.0;
+    pose.headOffset.x = -56; pose.headOffset.y = -18;
+    // Bent legs up in guard (feet behind opponent's hips)
+    pose.legL.hipX = 6;  pose.legL.hipY = -14; pose.legL.kneeX = 20; pose.legL.kneeY = -56; pose.legL.footX = 46; pose.legL.footY = -66;
+    pose.legR.hipX = 6;  pose.legR.hipY = -12; pose.legR.kneeX = 22; pose.legR.kneeY = -52; pose.legR.footX = 50; pose.legR.footY = -62;
+    // Arms up framing or gripping for defense
+    pose.armBack.shoulderX = -36;  pose.armBack.shoulderY = -24;  pose.armBack.elbowX = -26; pose.armBack.elbowY = -40;  pose.armBack.handX = -4;  pose.armBack.handY = -44;
+    pose.armFront.shoulderX = -32; pose.armFront.shoulderY = -30; pose.armFront.elbowX = -16; pose.armFront.elbowY = -46; pose.armFront.handX = 6;   pose.armFront.handY = -50;
+  }
+  if (f.state === 'ground_top') {
+    // Kneeling astride opponent (mount). Pelvis elevated, torso upright, arms up for GnP.
+    const pulse = Math.sin(t * 0.22) * 1.3;
+    pose.pelvis.x = 0; pose.pelvis.y = -52 + pulse * 0.6;
+    pose.torsoAngle = -0.05;
+    // Knees planted on either side (mount position)
+    pose.legL.hipX = -10 * bd; pose.legL.hipY = -48; pose.legL.kneeX = -24 * bd; pose.legL.kneeY = -20; pose.legL.footX = -14 * bd; pose.legL.footY = 0;
+    pose.legR.hipX =  10 * bd; pose.legR.hipY = -48; pose.legR.kneeX =  24 * bd; pose.legR.kneeY = -20; pose.legR.footX =  14 * bd; pose.legR.footY = 0;
+    // Arms raised high, ready to rain strikes
+    pose.armBack.shoulderX = -20 * bd;  pose.armBack.shoulderY = -100;
+    pose.armBack.elbowX = -12;  pose.armBack.elbowY = -136; pose.armBack.handX = -4;  pose.armBack.handY = -158;
+    pose.armFront.shoulderX = 22 * bd;  pose.armFront.shoulderY = -100;
+    pose.armFront.elbowX = 14;  pose.armFront.elbowY = -140; pose.armFront.handX = 22; pose.armFront.handY = -162;
+    pose.headOffset.x = -2; pose.headOffset.y = -130;
+    // Overlay attack animation if mid-GnP strike
+    if (f.attack) {
+      const ca = f.attack;
+      const peak = f.attackFrame < ca.startup ? (f.attackFrame / ca.startup) :
+                    f.attackFrame < ca.startup + ca.active ? 1 :
+                    1 - (f.attackFrame - ca.startup - ca.active) / ca.recovery;
+      const ease = Math.sin(peak * Math.PI);
+      if (ca.kind === 'ground_punch') {
+        pose.armFront.handX = 22 + ease * 18;
+        pose.armFront.handY = -162 + ease * 90;
+        pose.armFront.elbowX = 14 + ease * 10;
+        pose.armFront.elbowY = -140 + ease * 50;
+      } else if (ca.kind === 'ground_elbow') {
+        pose.armFront.handX = 12 + ease * 18;
+        pose.armFront.handY = -170 + ease * 110;
+        pose.armFront.elbowX = 8 + ease * 14;
+        pose.armFront.elbowY = -150 + ease * 30;
+      }
+    }
+  }
+  if (f.state === 'sub_offense') {
+    // Locking in a submission. During the lock-in window we animate from
+    // "reaching out" to "fully wrapped" so the wrap-up is visible. After lock-in
+    // the pose holds steady at the wrapped position with a subtle pull pulse.
+    const lockFrame = f.subLockFrame || 0;
+    const lockTotal = f.subLockTotal || 0;
+    const lockK = lockTotal > 0 ? Math.max(0, Math.min(1, lockFrame / lockTotal)) : 1;
+    const reach = 1 - lockK; // 1 at start of lock-in, 0 once fully wrapped
+    const subKind = f.subLockKind;
+    pose.pelvis.x = 0; pose.pelvis.y = -56 - reach * 6;
+    pose.torsoAngle = 0.24 + reach * 0.1;
+    pose.legL.kneeX = -22 * bd; pose.legL.kneeY = -22; pose.legL.footX = -14 * bd; pose.legL.footY = 0;
+    pose.legR.kneeX =  22 * bd; pose.legR.kneeY = -22; pose.legR.footX =  14 * bd; pose.legR.footY = 0;
+    if (subKind === 'armbar' || subKind === 'kimura') {
+      // Arms reach out, then snap back into a tight cross-body lock on the limb.
+      pose.armBack.shoulderX = -16 * bd; pose.armBack.shoulderY = -96;
+      pose.armBack.elbowX = 14 + reach * 16; pose.armBack.elbowY = -110 - reach * 8;
+      pose.armBack.handX = 30 + reach * 28; pose.armBack.handY = -118 - reach * 18;
+      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -96;
+      pose.armFront.elbowX = 22 + reach * 14; pose.armFront.elbowY = -108 - reach * 6;
+      pose.armFront.handX = 32 + reach * 24; pose.armFront.handY = -116 - reach * 14;
+    } else if (subKind === 'rear_naked' || subKind === 'guillotine') {
+      // Choke — arms wrap around the neck/throat, hands clinched together.
+      pose.armBack.shoulderX = -14 * bd; pose.armBack.shoulderY = -98;
+      pose.armBack.elbowX = 6; pose.armBack.elbowY = -130 - reach * 4;
+      pose.armBack.handX = 22; pose.armBack.handY = -132 - reach * 8;
+      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -98;
+      pose.armFront.elbowX = 18; pose.armFront.elbowY = -126 - reach * 4;
+      pose.armFront.handX = 26; pose.armFront.handY = -130 - reach * 8;
+    } else {
+      // Triangle and others — default tight wrap with pull pulse.
+      const pulse = lockTotal === 0 ? Math.sin((f.animTime || 0) * 0.25) * 1.5 : 0;
+      pose.armBack.shoulderX = -16 * bd; pose.armBack.shoulderY = -96;
+      pose.armBack.elbowX = 10; pose.armBack.elbowY = -128 + pulse;
+      pose.armBack.handX = 28 + reach * 14; pose.armBack.handY = -128 - reach * 10;
+      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -96;
+      pose.armFront.elbowX = 24; pose.armFront.elbowY = -124 + pulse;
+      pose.armFront.handX = 32 + reach * 14; pose.armFront.handY = -126 - reach * 10;
+    }
+    pose.headOffset.x = 6; pose.headOffset.y = -130;
+  }
+  if (f.state === 'sub_defense') {
+    // Fighter is being submitted — struggling; arms up flailing.
+    const flail = Math.sin(t * 0.4) * 6;
+    pose.pelvis.x = 0; pose.pelvis.y = -18;
+    pose.torsoAngle = 0.08;
+    pose.headOffset.x = -42; pose.headOffset.y = -22;
+    pose.legL.hipX = 4; pose.legL.hipY = -16; pose.legL.kneeX = 20; pose.legL.kneeY = -44 + flail * 0.5; pose.legL.footX = 50; pose.legL.footY = -40;
+    pose.legR.hipX = 4; pose.legR.hipY = -14; pose.legR.kneeX = 22; pose.legR.kneeY = -38 - flail * 0.5; pose.legR.footX = 54; pose.legR.footY = -34;
+    pose.armBack.shoulderX = -30; pose.armBack.shoulderY = -26;
+    pose.armBack.elbowX = -24 - flail; pose.armBack.elbowY = -44 + flail; pose.armBack.handX = -10; pose.armBack.handY = -56 + flail;
+    pose.armFront.shoulderX = -26; pose.armFront.shoulderY = -32;
+    pose.armFront.elbowX = -10 + flail; pose.armFront.elbowY = -50 - flail; pose.armFront.handX = 8; pose.armFront.handY = -60 - flail;
   }
   if (f.state === 'attack' && a) {
     const phase = af < a.startup ? 'startup' : af < a.startup + a.active ? 'active' : 'recovery';
