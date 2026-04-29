@@ -22,6 +22,18 @@ function envGain(when, attack, decay, peak = 0.5) {
   return g;
 }
 
+// Explicitly disconnect a finished node graph so long sessions don't slowly
+// accumulate orphaned WebAudio nodes (Chrome won't always GC them quickly,
+// and SFX fire dozens of times per second during heavy combat).
+function cleanup(node, ...others) {
+  node.onended = () => {
+    try { node.disconnect(); } catch (_) { /* ignore */ }
+    for (const n of others) {
+      try { n && n.disconnect(); } catch (_) { /* ignore */ }
+    }
+  };
+}
+
 function tone(freq, dur, type = 'sine', gain = 0.3, when = 0) {
   if (!ensure() || muted) return;
   const t = ctx.currentTime + when;
@@ -32,6 +44,7 @@ function tone(freq, dur, type = 'sine', gain = 0.3, when = 0) {
   o.connect(g).connect(ctx.destination);
   o.start(t);
   o.stop(t + dur + 0.05);
+  cleanup(o, g);
 }
 
 function sweep(f1, f2, dur, type = 'sawtooth', gain = 0.25) {
@@ -45,6 +58,7 @@ function sweep(f1, f2, dur, type = 'sawtooth', gain = 0.25) {
   o.connect(g).connect(ctx.destination);
   o.start(t);
   o.stop(t + dur + 0.05);
+  cleanup(o, g);
 }
 
 function noise(dur, gain = 0.3, lp = 1500) {
@@ -61,6 +75,7 @@ function noise(dur, gain = 0.3, lp = 1500) {
   const g = envGain(t, 0.005, dur, gain);
   src.connect(filter).connect(g).connect(ctx.destination);
   src.start(t);
+  cleanup(src, filter, g);
 }
 
 export const SFX = {

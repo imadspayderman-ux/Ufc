@@ -591,6 +591,14 @@ function wireTouchButton(btn) {
 }
 document.querySelectorAll('#touch-controls .tc-btn').forEach(wireTouchButton);
 
+// Global safety net: if focus is lost (alt-tab, dev tools, modal popup) any
+// touch button that's still "held" should release so the player doesn't come
+// back to a stuck input. Pairs with the `held.clear()` in input.js's blur
+// handler.
+window.addEventListener('blur', () => {
+  document.querySelectorAll('#touch-controls .tc-btn.active').forEach((b) => b.classList.remove('active'));
+});
+
 // init
 buildRoster();
 show('menu');

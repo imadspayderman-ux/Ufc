@@ -38,6 +38,10 @@ export class Renderer {
   // Expanding impact ring spawned at strike connect. Gives a visible burst
   // that sells the force of the punch. Ring size/thickness scale with damage.
   spawnImpactRing(x, y, dmg) {
+    // Defensive cap so a long, frantic match can't accumulate effect arrays
+    // beyond what we'd ever want on screen at once. Older entries are dropped
+    // first (FIFO) so the freshest hits remain.
+    if (this.impactRings.length > 80) this.impactRings.splice(0, this.impactRings.length - 80);
     const size = dmg >= 16 ? 'heavy' : dmg >= 10 ? 'medium' : 'light';
     this.impactRings.push({
       x, y,
@@ -58,6 +62,7 @@ export class Renderer {
   }
 
   spawnParticles(x, y, n, palette = ['#ffcc33', '#ff5566', '#fff'], opts = {}) {
+    if (this.particles.length > 400) this.particles.splice(0, this.particles.length - 400);
     for (let i = 0; i < n; i++) {
       this.particles.push({
         x, y,
@@ -71,6 +76,7 @@ export class Renderer {
     }
   }
   spawnPopup(x, y, text, color = '#fff', size = 28) {
+    if (this.popups.length > 40) this.popups.splice(0, this.popups.length - 40);
     this.popups.push({ x, y, text, color, size, life: 40, vy: -1.4 });
   }
 
