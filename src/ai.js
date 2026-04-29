@@ -172,6 +172,8 @@ export class AI {
 
   step(self, opp, match) {
     if (self.state === 'down' || self.state === 'ko' || self.state === 'hit') return null;
+    // Locked in takedown animation — engine drives the pose, AI must wait.
+    if (self.state === 'takedown_shoot' || self.state === 'takedown_defend') return null;
     this.decide(self, opp, match);
     if (this.intentDur > 0) this.intentDur--;
     const dir = opp.x > self.x ? 1 : -1;

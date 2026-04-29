@@ -104,32 +104,41 @@
     </div>
     <canvas id="arena" width="1280" height="640"></canvas>
     <div id="announcer"></div>
-    <div id="control-hints">
-      <div class="chint-group">
-        <span><kbd>A</kbd><kbd>D</kbd> MOVE</span>
-        <span><kbd>W</kbd> JUMP</span>
-        <span><kbd>S</kbd> CROUCH</span>
+    <!-- Touch / click control panel: works on desktop AND mobile. Each button
+         dispatches the same input event as its keyboard counterpart. -->
+    <div id="touch-controls">
+      <div class="tc-side tc-left">
+        <div class="tc-dpad">
+          <button class="tc-btn dpad up"      data-hold="up"     aria-label="Jump">▲</button>
+          <button class="tc-btn dpad left"    data-hold="left"   aria-label="Move left">◀</button>
+          <button class="tc-btn dpad right"   data-hold="right"  aria-label="Move right">▶</button>
+          <button class="tc-btn dpad down"    data-hold="down"   aria-label="Crouch">▼</button>
+        </div>
+        <div class="tc-secondary">
+          <button class="tc-btn def"  data-hold="block"   aria-label="Block">BLOCK</button>
+          <button class="tc-btn def"  data-press="dodge"  aria-label="Dodge">DODGE</button>
+        </div>
       </div>
-      <div class="chint-group">
-        <span><kbd>J</kbd> JAB</span>
-        <span><kbd>K</kbd> CROSS</span>
-        <span><kbd>U</kbd> UPPERCUT</span>
-      </div>
-      <div class="chint-group">
-        <span><kbd>O</kbd> LOW KICK</span>
-        <span><kbd>L</kbd> KICK</span>
-        <span><kbd>;</kbd> HIGH KICK</span>
-      </div>
-      <div class="chint-group">
-        <span><kbd>I</kbd> BLOCK</span>
-        <span><kbd>⇧</kbd> DODGE</span>
-        <span><kbd>␣</kbd> SPECIAL</span>
-      </div>
-      <div class="chint-group">
-        <span><kbd>G</kbd> CLINCH / TAKEDOWN</span>
-        <span><kbd>F</kbd> SUBMISSION</span>
-        <span><kbd>T</kbd> BREAK / STAND</span>
-        <span><kbd>E</kbd> TAP ESCAPE</span>
+
+      <div class="tc-side tc-right">
+        <div class="tc-row tc-strikes">
+          <button class="tc-btn strike jab"   data-press="jab"        aria-label="Jab">JAB</button>
+          <button class="tc-btn strike cross" data-press="cross"      aria-label="Cross">CROSS</button>
+          <button class="tc-btn strike upper" data-press="uppercut"   aria-label="Uppercut">UPPER</button>
+        </div>
+        <div class="tc-row tc-kicks">
+          <button class="tc-btn kick low"  data-press="low_kick"  aria-label="Low kick">LOW KICK</button>
+          <button class="tc-btn kick mid"  data-press="kick"      aria-label="Mid kick">KICK</button>
+          <button class="tc-btn kick high" data-press="head_kick" aria-label="High kick">HIGH KICK</button>
+        </div>
+        <div class="tc-row tc-special">
+          <button class="tc-btn grapple"   data-press="grapple"    aria-label="Clinch / takedown">CLINCH</button>
+          <button class="tc-btn submit"    data-press="submit"     aria-label="Submission">SUBMIT</button>
+          <button class="tc-btn brk"       data-press="break"      aria-label="Break / stand">BREAK</button>
+          <button class="tc-btn tap"       data-press="tap_escape" aria-label="Tap escape">TAP</button>
+          <button class="tc-btn adv"       data-press="advance"    aria-label="Advance position">ADV</button>
+          <button class="tc-btn special"   data-press="special"    aria-label="Special">SPECIAL</button>
+        </div>
       </div>
     </div>
     <div id="pause-overlay" class="overlay hidden">

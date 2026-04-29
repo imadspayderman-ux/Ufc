@@ -123,7 +123,10 @@ export class FighterState {
   clinchMul() { return 0.6 + ((this.data.grappling && this.data.grappling.clinch) || 5) * 0.06; }
 
   isGrappling() {
-    return ['clinch', 'ground_top', 'ground_bottom', 'sub_offense', 'sub_defense', 'takedown', 'sprawl'].includes(this.state);
+    return [
+      'clinch', 'ground_top', 'ground_bottom', 'sub_offense', 'sub_defense',
+      'takedown', 'takedown_shoot', 'takedown_defend', 'sprawl',
+    ].includes(this.state);
   }
 
   faceTarget(targetX) {
@@ -563,10 +566,33 @@ export class Match {
       pos = 'side_control';
     }
     if (inClinch) this.grapple = null;
-    this._startGround(attacker, defender, pos);
+    // Play a takedown shoot/drive/slam animation before settling on the ground.
+    // The animation drives both fighters' poses for ~36 frames, then we lock
+    // into the proper top/bottom ground state.
+    this._startTakedownAnim(attacker, defender, pos);
     this.pushEvent('takedown_success', { attacker: attacker.side, position: pos });
     SFX.hitHard();
     return true;
+  }
+
+  // Multi-phase takedown sequence: shoot (low level change) → drive (lift/turn)
+  // → slam (crash to mat). The grapple object holds the animation state until
+  // it ticks down, at which point we settle into _startGround.
+  _startTakedownAnim(attacker, defender, targetPos) {
+    const centerX = (attacker.x + defender.x) / 2;
+    attacker.x = centerX; defender.x = centerX;
+    attacker.state = 'takedown_shoot';
+    defender.state = 'takedown_defend';
+    attacker.grappleRole = 'top'; defender.grappleRole = 'bottom';
+    attacker.attack = null; attacker.attackFrame = 0;
+    defender.attack = null; defender.attackFrame = 0;
+    attacker.vx = 0; attacker.vy = 0; defender.vx = 0; defender.vy = 0;
+    // Total animation length: 12 (shoot) + 14 (drive) + 12 (slam) = 38 frames.
+    this.grapple = {
+      top: attacker, bottom: defender, position: targetPos, centerX,
+      timer: 0, submission: null,
+      takedownAnim: { frame: 0, totalFrames: 38, shootEnd: 12, driveEnd: 26 },
+    };
   }
 
   _startGround(top, bottom, position) {
@@ -687,6 +713,10 @@ export class Match {
       escapeRequired,        // taps needed to escape
       hold: 0,               // frames held
       dpsDrain: sub.dps,
+      // Lock-in animation: 24 frames of "wrapping up the limb" before pressure
+      // starts building. The defender can't tap-escape during this window so
+      // the attacker visibly secures the hold first.
+      lockIn: { frame: 0, totalFrames: 24 },
     };
     this.pushEvent('submission_start', { kind, attacker: attacker.side });
     SFX.special();
@@ -698,6 +728,8 @@ export class Match {
     const g = this.grapple;
     if (!g || !g.submission) return false;
     if (g.submission.defender !== defender) return false;
+    // Taps don't count while the attacker is still locking in the hold.
+    if (g.submission.lockIn) return false;
     if (defender.stamina < 1) return false;
     defender.stamina = Math.max(0, defender.stamina - 0.8);
     defender.taps = (defender.taps || 0) + 1;
@@ -723,6 +755,56 @@ export class Match {
     if (g.b) g.b.stamina = Math.max(0, g.b.stamina - burn);
     if (g.top) g.top.stamina = Math.max(0, g.top.stamina - burn * 0.6);
     if (g.bottom) g.bottom.stamina = Math.max(0, g.bottom.stamina - burn * 1.2);
+
+    // Takedown animation: tick through shoot/drive/slam phases, then lock in ground.
+    if (g.takedownAnim) {
+      const ta = g.takedownAnim;
+      ta.frame++;
+      // Lock the participants in place so physics doesn't push them apart.
+      // Expose frame on fighters so the renderer can read animation progress.
+      if (g.top) {
+        g.top.x = g.centerX; g.top.y = ARENA.groundY; g.top.vx = 0; g.top.vy = 0;
+        g.top.takedownFrame = ta.frame; g.top.takedownTotal = ta.totalFrames;
+        g.top.takedownPhase = ta.frame < ta.shootEnd ? 'shoot' : ta.frame < ta.driveEnd ? 'drive' : 'slam';
+      }
+      if (g.bottom) {
+        g.bottom.x = g.centerX; g.bottom.y = ARENA.groundY; g.bottom.vx = 0; g.bottom.vy = 0;
+        g.bottom.takedownFrame = ta.frame; g.bottom.takedownTotal = ta.totalFrames;
+        g.bottom.takedownPhase = ta.frame < ta.shootEnd ? 'shoot' : ta.frame < ta.driveEnd ? 'drive' : 'slam';
+      }
+      // Brief screen shake on impact (slam frame).
+      if (ta.frame === ta.driveEnd + 1) {
+        this.shake = Math.max(this.shake, 8);
+        SFX.hitHard();
+      }
+      if (ta.frame >= ta.totalFrames) {
+        // Settle into final ground position. Clear takedown markers.
+        const targetPos = g.position;
+        const top = g.top, bottom = g.bottom;
+        if (top) { top.takedownFrame = 0; top.takedownPhase = null; }
+        if (bottom) { bottom.takedownFrame = 0; bottom.takedownPhase = null; }
+        this._startGround(top, bottom, targetPos);
+      }
+      return;
+    }
+
+    // Submission lock-in animation: brief wrap-up phase before submission ticks.
+    if (g.submission && g.submission.lockIn) {
+      const li = g.submission.lockIn;
+      li.frame++;
+      // Expose progress on attacker so render can show the wrap-up animation.
+      const att = g.submission.attacker;
+      const def = g.submission.defender;
+      if (att) { att.subLockFrame = li.frame; att.subLockTotal = li.totalFrames; att.subLockKind = g.submission.kind; }
+      if (def) { def.subLockFrame = li.frame; def.subLockTotal = li.totalFrames; def.subLockKind = g.submission.kind; }
+      if (li.frame >= li.totalFrames) {
+        g.submission.lockIn = null;
+        if (att) { att.subLockFrame = 0; att.subLockTotal = 0; att.subLockKind = null; }
+        if (def) { def.subLockFrame = 0; def.subLockTotal = 0; def.subLockKind = null; }
+      }
+      // Don't tick submission progress / apply damage during lock-in.
+      return;
+    }
 
     // Submission tick: progress builds toward 100, applies damage.
     if (g.submission) {

@@ -403,10 +403,28 @@ export class Renderer {
     }
     // Grapple-aware fighter draw ordering
     if (match.grapple && match.grapple.position !== 'clinch') {
-      // Ground: draw the bottom fighter first (beneath), then top overlay
+      // Ground / takedown: draw the bottom fighter first (beneath), then top overlay.
+      // We also nudge the bottom fighter slightly off-centre so the prone body is
+      // visible alongside the kneeling top fighter (rather than perfectly stacked).
       const bottomF = match.grapple.bottom;
       const topF = match.grapple.top;
-      if (bottomF) this.drawFighter(ctx, bottomF, match);
+      if (bottomF) {
+        ctx.save();
+        // Once on the ground, slide bottom fighter so head/torso extends to the
+        // side opposite where top is leaning. During the slam phase keep them
+        // centred (they're still mid-air falling).
+        const isFinalGround = bottomF.state === 'ground_bottom' || bottomF.state === 'sub_defense' || bottomF.state === 'down';
+        if (isFinalGround) {
+          // Bottom fighter's head is drawn at headOffset.x = -56 in local coords.
+          // Push body so the supine torso pokes out to the LEFT of the top fighter
+          // (relative to top facing). Use top.facing to determine side.
+          const topFacing = topF ? topF.facing : 1;
+          const offset = -28 * topFacing;
+          ctx.translate(offset, 0);
+        }
+        this.drawFighter(ctx, bottomF, match);
+        ctx.restore();
+      }
       if (topF) this.drawFighter(ctx, topF, match);
       // Submission visual overlay
       this.drawGrappleOverlay(ctx, match);
@@ -658,6 +676,83 @@ function computePose(f, t) {
     pose.armBack.shoulderX = 10; pose.armBack.shoulderY = -22; pose.armBack.elbowX = -16; pose.armBack.elbowY = -16; pose.armBack.handX = -38; pose.armBack.handY = -10;
     pose.armFront.shoulderX = 12; pose.armFront.shoulderY = -28; pose.armFront.elbowX = -10; pose.armFront.elbowY = -22; pose.armFront.handX = -32; pose.armFront.handY = -16;
   }
+  if (f.state === 'takedown_shoot') {
+    // Attacker: shoot in low (level change) → drive forward (lift) → slam.
+    const phase = f.takedownPhase || 'shoot';
+    const totalFrame = f.takedownFrame || 0;
+    const total = f.takedownTotal || 38;
+    const k = totalFrame / total; // 0..1 across whole takedown
+    if (phase === 'shoot') {
+      // Level change — pelvis drops hard, head + arms drive forward at hip height.
+      const s = totalFrame / 12; // 0..1 within shoot phase
+      pose.pelvis.x = 0; pose.pelvis.y = -36 - 16 * (1 - s);
+      pose.torsoAngle = 0.55 + 0.15 * s;
+      pose.headOffset.x = 26 + 8 * s; pose.headOffset.y = -50 - 6 * s;
+      pose.legL.kneeX = -20 * bd; pose.legL.kneeY = -16; pose.legL.footX = -28 * bd; pose.legL.footY = 0;
+      pose.legR.kneeX =  18 * bd; pose.legR.kneeY = -28 + 8 * s; pose.legR.footX = 32 * bd + 8 * s; pose.legR.footY = 0;
+      pose.armBack.shoulderY = -50; pose.armBack.elbowX = 26; pose.armBack.elbowY = -38; pose.armBack.handX = 44; pose.armBack.handY = -28 - 6 * s;
+      pose.armFront.shoulderY = -52; pose.armFront.elbowX = 30; pose.armFront.elbowY = -36; pose.armFront.handX = 50; pose.armFront.handY = -22 - 6 * s;
+    } else if (phase === 'drive') {
+      // Drive — torso pushing through, arms wrapped around defender's legs/waist.
+      const s = (totalFrame - 12) / 14; // 0..1
+      pose.pelvis.x = -2 + 4 * s; pose.pelvis.y = -54 - 6 * s;
+      pose.torsoAngle = 0.45 - 0.15 * s;
+      pose.headOffset.x = 18; pose.headOffset.y = -90 - 18 * s;
+      pose.legL.kneeX = -22 * bd; pose.legL.kneeY = -36 - 6 * s; pose.legL.footX = -30 * bd; pose.legL.footY = 0;
+      pose.legR.kneeX =  20 * bd; pose.legR.kneeY = -40 - 4 * s; pose.legR.footX =  28 * bd; pose.legR.footY = 0;
+      pose.armBack.elbowX = 14;  pose.armBack.elbowY = -100; pose.armBack.handX = 30 + 4 * s; pose.armBack.handY = -94;
+      pose.armFront.elbowX = 26; pose.armFront.elbowY = -94; pose.armFront.handX = 36 + 4 * s; pose.armFront.handY = -88;
+    } else {
+      // Slam — both crashing down, attacker ending kneeling on top.
+      const s = (totalFrame - 26) / 12; // 0..1
+      pose.pelvis.x = 0; pose.pelvis.y = -54 + 4 * s;
+      pose.torsoAngle = 0.10 - 0.15 * s;
+      pose.headOffset.x = -2; pose.headOffset.y = -126 - 4 * (1 - s);
+      pose.legL.hipX = -10 * bd; pose.legL.hipY = -50; pose.legL.kneeX = -22 * bd; pose.legL.kneeY = -22; pose.legL.footX = -14 * bd; pose.legL.footY = 0;
+      pose.legR.hipX =  10 * bd; pose.legR.hipY = -50; pose.legR.kneeX =  22 * bd; pose.legR.kneeY = -22; pose.legR.footX =  14 * bd; pose.legR.footY = 0;
+      pose.armBack.shoulderY = -100; pose.armBack.elbowY = -130 + 6 * s; pose.armBack.handY = -150 + 6 * s; pose.armBack.handX = 8;
+      pose.armFront.shoulderY = -100; pose.armFront.elbowY = -130 + 6 * s; pose.armFront.handY = -150 + 6 * s; pose.armFront.handX = 22;
+    }
+    // Mark kRaw used so engine devs see we read frame from f
+    void k;
+  }
+  if (f.state === 'takedown_defend') {
+    // Defender: leans back during shoot, lifted during drive, slams to back during slam.
+    const phase = f.takedownPhase || 'shoot';
+    const totalFrame = f.takedownFrame || 0;
+    if (phase === 'shoot') {
+      // Hands pushing down on attacker's head, leaning back.
+      const s = totalFrame / 12;
+      pose.pelvis.x = -2; pose.pelvis.y = -82 + 4 * s;
+      pose.torsoAngle = -0.2 - 0.1 * s;
+      pose.headOffset.x = -8; pose.headOffset.y = -154;
+      pose.legL.footX = -22 * bd; pose.legL.kneeX = -16 * bd; pose.legL.kneeY = -42;
+      pose.legR.footX =  24 * bd + 4 * s; pose.legR.kneeX = 18 * bd; pose.legR.kneeY = -42;
+      pose.armBack.elbowX = -4; pose.armBack.elbowY = -110; pose.armBack.handX = -8; pose.armBack.handY = -90 - 4 * s;
+      pose.armFront.elbowX = 6; pose.armFront.elbowY = -100; pose.armFront.handX = 4; pose.armFront.handY = -82 - 4 * s;
+    } else if (phase === 'drive') {
+      // Being lifted — feet leave ground, body angled up & back.
+      const s = (totalFrame - 12) / 14;
+      pose.pelvis.x = 4; pose.pelvis.y = -82 - 24 * s;
+      pose.torsoAngle = -0.4 - 0.1 * s;
+      pose.headOffset.x = -22; pose.headOffset.y = -136 - 16 * s;
+      // Legs trail behind / up
+      pose.legL.hipY = -78 - 24 * s; pose.legL.kneeX = -28 * bd; pose.legL.kneeY = -42 - 14 * s; pose.legL.footX = -32 * bd; pose.legL.footY = -12 - 8 * s;
+      pose.legR.hipY = -78 - 24 * s; pose.legR.kneeX =  26 * bd; pose.legR.kneeY = -42 - 14 * s; pose.legR.footX =  30 * bd; pose.legR.footY = -8 - 8 * s;
+      // Arms flail up
+      pose.armBack.elbowY = -130 - 8 * s; pose.armBack.handY = -150 - 8 * s; pose.armBack.handX = -16;
+      pose.armFront.elbowY = -120 - 8 * s; pose.armFront.handY = -140 - 8 * s; pose.armFront.handX = -8;
+    } else {
+      // Slam — landed flat on back. Transition into ground_bottom-like shape.
+      pose.pelvis.x = 0; pose.pelvis.y = -14;
+      pose.torsoAngle = 0;
+      pose.headOffset.x = -56; pose.headOffset.y = -18;
+      pose.legL.hipX = 6;  pose.legL.hipY = -14; pose.legL.kneeX = 20; pose.legL.kneeY = -50; pose.legL.footX = 46; pose.legL.footY = -56;
+      pose.legR.hipX = 6;  pose.legR.hipY = -12; pose.legR.kneeX = 22; pose.legR.kneeY = -46; pose.legR.footX = 50; pose.legR.footY = -52;
+      pose.armBack.shoulderX = -36;  pose.armBack.shoulderY = -24; pose.armBack.elbowX = -28; pose.armBack.elbowY = -38; pose.armBack.handX = -10; pose.armBack.handY = -42;
+      pose.armFront.shoulderX = -32; pose.armFront.shoulderY = -30; pose.armFront.elbowX = -18; pose.armFront.elbowY = -44; pose.armFront.handX = 4; pose.armFront.handY = -48;
+    }
+  }
   if (f.state === 'sprawl') {
     // Shot defended — attacker on hands and knees, forehead low, butt up.
     const pulse = (Math.sin(t * 0.25) + 1) * 0.5;
@@ -765,16 +860,44 @@ function computePose(f, t) {
     }
   }
   if (f.state === 'sub_offense') {
-    // Locking in a submission — leaning forward with arms wrapped.
-    pose.pelvis.x = 0; pose.pelvis.y = -56;
-    pose.torsoAngle = 0.24;
+    // Locking in a submission. During the lock-in window we animate from
+    // "reaching out" to "fully wrapped" so the wrap-up is visible. After lock-in
+    // the pose holds steady at the wrapped position with a subtle pull pulse.
+    const lockFrame = f.subLockFrame || 0;
+    const lockTotal = f.subLockTotal || 0;
+    const lockK = lockTotal > 0 ? Math.max(0, Math.min(1, lockFrame / lockTotal)) : 1;
+    const reach = 1 - lockK; // 1 at start of lock-in, 0 once fully wrapped
+    const subKind = f.subLockKind;
+    pose.pelvis.x = 0; pose.pelvis.y = -56 - reach * 6;
+    pose.torsoAngle = 0.24 + reach * 0.1;
     pose.legL.kneeX = -22 * bd; pose.legL.kneeY = -22; pose.legL.footX = -14 * bd; pose.legL.footY = 0;
     pose.legR.kneeX =  22 * bd; pose.legR.kneeY = -22; pose.legR.footX =  14 * bd; pose.legR.footY = 0;
-    // Arms wrapped tight, hands close together (choke / lock grip)
-    pose.armBack.shoulderX = -16 * bd; pose.armBack.shoulderY = -96;
-    pose.armBack.elbowX = 10; pose.armBack.elbowY = -128; pose.armBack.handX = 28; pose.armBack.handY = -128;
-    pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -96;
-    pose.armFront.elbowX = 24; pose.armFront.elbowY = -124; pose.armFront.handX = 32; pose.armFront.handY = -126;
+    if (subKind === 'armbar' || subKind === 'kimura') {
+      // Arms reach out, then snap back into a tight cross-body lock on the limb.
+      pose.armBack.shoulderX = -16 * bd; pose.armBack.shoulderY = -96;
+      pose.armBack.elbowX = 14 + reach * 16; pose.armBack.elbowY = -110 - reach * 8;
+      pose.armBack.handX = 30 + reach * 28; pose.armBack.handY = -118 - reach * 18;
+      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -96;
+      pose.armFront.elbowX = 22 + reach * 14; pose.armFront.elbowY = -108 - reach * 6;
+      pose.armFront.handX = 32 + reach * 24; pose.armFront.handY = -116 - reach * 14;
+    } else if (subKind === 'rear_naked' || subKind === 'guillotine') {
+      // Choke — arms wrap around the neck/throat, hands clinched together.
+      pose.armBack.shoulderX = -14 * bd; pose.armBack.shoulderY = -98;
+      pose.armBack.elbowX = 6; pose.armBack.elbowY = -130 - reach * 4;
+      pose.armBack.handX = 22; pose.armBack.handY = -132 - reach * 8;
+      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -98;
+      pose.armFront.elbowX = 18; pose.armFront.elbowY = -126 - reach * 4;
+      pose.armFront.handX = 26; pose.armFront.handY = -130 - reach * 8;
+    } else {
+      // Triangle and others — default tight wrap with pull pulse.
+      const pulse = lockTotal === 0 ? Math.sin((f.animTime || 0) * 0.25) * 1.5 : 0;
+      pose.armBack.shoulderX = -16 * bd; pose.armBack.shoulderY = -96;
+      pose.armBack.elbowX = 10; pose.armBack.elbowY = -128 + pulse;
+      pose.armBack.handX = 28 + reach * 14; pose.armBack.handY = -128 - reach * 10;
+      pose.armFront.shoulderX = 18 * bd; pose.armFront.shoulderY = -96;
+      pose.armFront.elbowX = 24; pose.armFront.elbowY = -124 + pulse;
+      pose.armFront.handX = 32 + reach * 14; pose.armFront.handY = -126 - reach * 10;
+    }
     pose.headOffset.x = 6; pose.headOffset.y = -130;
   }
   if (f.state === 'sub_defense') {

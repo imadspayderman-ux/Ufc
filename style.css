@@ -277,34 +277,86 @@ h3 { font-size: 22px; letter-spacing: 2px; }
 .round-dots span.won { background: var(--gold); box-shadow: 0 0 6px var(--gold); }
 .round-dots span.current { background: rgba(255,204,51,0.3); }
 
-/* Control hints strip at bottom of fight screen */
-#control-hints {
+/* On-screen touch / click action buttons (works on desktop + mobile). */
+#touch-controls {
   position: absolute;
   bottom: 8px; left: 0; right: 0;
-  display: flex; justify-content: center; gap: 28px;
-  padding: 6px 12px;
-  pointer-events: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 16px 4px;
+  gap: 16px;
+  pointer-events: none; /* container is pass-through; buttons re-enable */
+  z-index: 5;
+}
+.tc-side { display: flex; gap: 12px; align-items: flex-end; pointer-events: auto; }
+.tc-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.tc-side .tc-row + .tc-row { margin-top: 4px; }
+.tc-right { flex-direction: column; align-items: flex-end; }
+
+.tc-dpad {
+  display: grid;
+  grid-template-areas:
+    ".  up   . "
+    "lf .    rt"
+    ".  dn   . ";
+  grid-template-columns: 44px 44px 44px;
+  grid-template-rows: 36px 36px 36px;
+  gap: 4px;
+}
+.tc-dpad .up    { grid-area: up; }
+.tc-dpad .left  { grid-area: lf; }
+.tc-dpad .right { grid-area: rt; }
+.tc-dpad .down  { grid-area: dn; }
+.tc-secondary { display: flex; flex-direction: column; gap: 4px; }
+
+.tc-btn {
+  pointer-events: auto;
+  font-family: 'Impact', 'Arial Black', sans-serif;
   font-size: 11px;
-  opacity: 0.72;
+  letter-spacing: 1.5px;
+  padding: 6px 10px;
+  min-width: 52px;
+  color: #f4f4f4;
+  background: linear-gradient(180deg, #2a3344 0%, #141a26 100%);
+  border: 1px solid #4a5468;
+  border-bottom-width: 3px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  text-shadow: 1px 1px 0 #000;
+  transition: transform 0.06s, background 0.1s;
 }
-.chint-group {
-  display: flex; gap: 10px;
-  background: rgba(0,0,0,0.5);
-  border: 1px solid rgba(255,204,51,0.2);
-  padding: 4px 10px;
-  letter-spacing: 2px;
-  color: #ddd;
+.tc-btn:hover { background: linear-gradient(180deg, #36405a 0%, #1a2030 100%); }
+.tc-btn.active, .tc-btn:active {
+  transform: translateY(2px);
+  border-bottom-width: 1px;
+  background: linear-gradient(180deg, #1a2030 0%, #2a3344 100%);
 }
-.chint-group span { display: flex; align-items: center; gap: 4px; }
-.chint-group kbd {
-  background: #1a222e;
-  border: 1px solid #3a4458;
-  padding: 1px 6px;
-  font-family: 'Courier New', monospace;
-  font-size: 10px;
-  color: var(--gold);
-  border-radius: 2px;
-  box-shadow: inset 0 -1px 0 rgba(255,255,255,0.1), 0 1px 0 #000;
+.tc-btn.dpad { font-size: 16px; padding: 4px; min-width: 0; color: var(--gold); }
+.tc-btn.strike { background: linear-gradient(180deg, #b03040 0%, #5a1820 100%); border-color: #d04050; color: #fff; }
+.tc-btn.strike.upper { background: linear-gradient(180deg, #c04050 0%, #6a2030 100%); }
+.tc-btn.kick   { background: linear-gradient(180deg, #c87020 0%, #6a3810 100%); border-color: #e08838; color: #fff; }
+.tc-btn.kick.high { background: linear-gradient(180deg, #e08838 0%, #804820 100%); }
+.tc-btn.def    { background: linear-gradient(180deg, #2a4a6a 0%, #142838 100%); border-color: #4a7090; color: #cfe2ff; }
+.tc-btn.grapple,
+.tc-btn.submit,
+.tc-btn.brk,
+.tc-btn.tap,
+.tc-btn.adv   { background: linear-gradient(180deg, #5a3a8a 0%, #2a1a48 100%); border-color: #8060c0; color: #e0d0ff; }
+.tc-btn.special { background: linear-gradient(180deg, #ffcc33 0%, #aa7a10 100%); border-color: #ffe580; color: #1a1208; text-shadow: none; }
+
+/* Mobile / narrow-screen: shrink buttons so they fit. */
+@media (max-width: 900px) {
+  .tc-btn { font-size: 10px; padding: 5px 6px; min-width: 44px; }
+  .tc-dpad { grid-template-columns: 36px 36px 36px; grid-template-rows: 30px 30px 30px; }
+}
+@media (max-width: 640px) {
+  #touch-controls { padding: 0 6px 2px; gap: 6px; }
+  .tc-btn { font-size: 9px; padding: 4px 5px; min-width: 36px; letter-spacing: 0.5px; }
+  .tc-dpad { grid-template-columns: 30px 30px 30px; grid-template-rows: 26px 26px 26px; }
 }
 
 #arena {

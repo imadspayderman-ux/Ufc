@@ -273,6 +273,10 @@ function applyP1Input(match) {
     return;
   }
   if (p.state === 'sprawl') return;
+  // During the takedown shoot/drive/slam, the fighter is locked in animation —
+  // no input is accepted until the slam completes and the player is in
+  // ground_top/ground_bottom.
+  if (p.state === 'takedown_shoot' || p.state === 'takedown_defend') return;
 
   const speed = 3.2 * p.speedMul();
 
@@ -517,6 +521,34 @@ function endMatchToResult(winner) {
   }
   show('result');
 }
+
+// Wire on-screen / touch action buttons. Each button has either a data-hold
+// (button driven held while pressed — for movement / block) or a data-press
+// (single trigger — for attacks / submissions / etc).
+function wireTouchButton(btn) {
+  const hold = btn.getAttribute('data-hold');
+  const trig = btn.getAttribute('data-press');
+  let active = false;
+  const start = (e) => {
+    e.preventDefault();
+    btn.classList.add('active');
+    if (hold) { Input.pressDown(hold); active = true; }
+    else if (trig) Input.triggerPress(trig);
+  };
+  const end = (e) => {
+    e.preventDefault();
+    btn.classList.remove('active');
+    if (hold && active) { Input.pressUp(hold); active = false; }
+  };
+  // Use pointer events so a single handler covers mouse + touch + pen.
+  btn.addEventListener('pointerdown', start);
+  btn.addEventListener('pointerup', end);
+  btn.addEventListener('pointercancel', end);
+  btn.addEventListener('pointerleave', end);
+  // Block context menus / browser drag selection.
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+document.querySelectorAll('#touch-controls .tc-btn').forEach(wireTouchButton);
 
 // init
 buildRoster();

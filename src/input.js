@@ -57,3 +57,25 @@ export function consumePressed(action) {
 export function clearPressed() { pressed.clear(); }
 export function clearAll() { held.clear(); pressed.clear(); }
 export function onKey(cb) { listeners.push(cb); }
+
+// Programmatic input — used by on-screen touch buttons.
+// pressDown/pressUp drive `held` (for movement / block). triggerPress fires a
+// single edge-pressed event (for attacks / submissions / etc).
+export function pressDown(action) {
+  if (!action) return;
+  if (!held.has(action)) pressed.add(action);
+  held.add(action);
+  listeners.forEach((l) => l('down', action));
+}
+export function pressUp(action) {
+  if (!action) return;
+  held.delete(action);
+  listeners.forEach((l) => l('up', action));
+}
+export function triggerPress(action) {
+  if (!action) return;
+  pressed.add(action);
+  listeners.forEach((l) => l('down', action));
+  // Auto-release on next frame so it acts like a tap.
+  setTimeout(() => listeners.forEach((l) => l('up', action)), 0);
+}
