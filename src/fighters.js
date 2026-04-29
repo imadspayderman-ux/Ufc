@@ -214,6 +214,32 @@ export const ROSTER = [
   },
 ];
 
+// === Uniform-body normalization ============================================
+// All fighters share an identical "stickman" silhouette: same height, same
+// build, same skin tone, same glove color, no belly, no sex-specific frame.
+// The only per-fighter visual differences are HAIR color and CLOTHING colors
+// (trunks / accent stripe / secondary stripe). Stat / gameplay differences
+// (power, speed, grappling, weight class…) are untouched.
+const UNIFORM_SKIN = '#d4a07a';
+const UNIFORM_GLOVES = '#1a1a1a';
+const UNIFORM_HEIGHT = 1.0;
+const UNIFORM_BUILD = 0.86;   // slim-ish stickman frame for everyone
+const UNIFORM_MUSCLE = 0.45;  // low muscle definition
+
+for (const f of ROSTER) {
+  f.height = UNIFORM_HEIGHT;
+  f.build = UNIFORM_BUILD;
+  f.muscle = UNIFORM_MUSCLE;
+  delete f.belly;
+  delete f.sex;
+  f.palette = {
+    ...f.palette,
+    skin: UNIFORM_SKIN,
+    gloves: UNIFORM_GLOVES,
+  };
+}
+// ===========================================================================
+
 export function getFighter(id) {
   return ROSTER.find(f => f.id === id);
 }
