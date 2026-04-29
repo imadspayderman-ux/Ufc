@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arcade MMA — Octagon Fury</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Main Menu -->
+  <section id="menu" class="screen active">
+    <div class="logo">
+      <div class="logo-top">OCTAGON</div>
+      <div class="logo-bottom">FURY</div>
+      <div class="logo-sub">ARCADE MMA</div>
+    </div>
+    <div class="menu-buttons">
+      <button data-action="play" class="btn primary">FIGHT</button>
+      <button data-action="howto" class="btn">HOW TO PLAY</button>
+      <button data-action="credits" class="btn">CREDITS</button>
+    </div>
+    <div class="footer">© Octagon Fury — original arcade fighters, no real persons depicted.</div>
+  </section>
+
+  <!-- Difficulty -->
+  <section id="difficulty" class="screen">
+    <h2>SELECT DIFFICULTY</h2>
+    <div class="diff-grid">
+      <button class="btn diff-btn" data-diff="0">ROOKIE</button>
+      <button class="btn diff-btn" data-diff="1">PRO</button>
+      <button class="btn diff-btn" data-diff="2">CHAMPION</button>
+      <button class="btn diff-btn" data-diff="3">LEGEND</button>
+    </div>
+    <button class="btn back-btn" data-action="back-menu">BACK</button>
+  </section>
+
+  <!-- Fighter Select -->
+  <section id="select" class="screen">
+    <h2>CHOOSE YOUR FIGHTER</h2>
+    <div id="roster" class="roster"></div>
+    <div class="select-info">
+      <div class="card-preview" id="preview-p1">
+        <canvas width="220" height="240"></canvas>
+        <div class="info">
+          <h3 class="name">—</h3>
+          <div class="nick">—</div>
+          <div class="style">—</div>
+          <div class="stats"></div>
+        </div>
+      </div>
+      <div class="vs-block">VS</div>
+      <div class="card-preview" id="preview-p2">
+        <canvas width="220" height="240"></canvas>
+        <div class="info">
+          <h3 class="name">—</h3>
+          <div class="nick">—</div>
+          <div class="style">—</div>
+          <div class="stats"></div>
+        </div>
+      </div>
+    </div>
+    <div class="select-actions">
+      <button class="btn back-btn" data-action="back-diff">BACK</button>
+      <button class="btn primary" id="start-fight" disabled>START FIGHT</button>
+    </div>
+  </section>
+
+  <!-- Fight Screen -->
+  <section id="fight" class="screen">
+    <div id="hud">
+      <div class="hud-side left">
+        <div class="hud-nameplate">
+          <div class="hud-portrait" id="portrait-p1"></div>
+          <div class="hud-meta">
+            <div class="hud-name" id="hud-name-p1">—</div>
+            <div class="hud-nick" id="hud-nick-p1">—</div>
+            <div class="hud-style" id="hud-style-p1">—</div>
+          </div>
+        </div>
+        <div class="bar health"><div class="fill" id="hp-p1"></div><span class="bar-label">HP</span></div>
+        <div class="bar stamina"><div class="fill" id="st-p1"></div><span class="bar-label">STAMINA</span></div>
+        <div class="bar special"><div class="fill" id="sp-p1"></div><span class="bar-label">SPECIAL</span></div>
+      </div>
+      <div class="hud-center">
+        <div class="round" id="round-label">ROUND 1</div>
+        <div class="round-dots" id="round-dots-p1"><span></span><span></span><span></span></div>
+        <div class="timer" id="timer">60</div>
+        <div class="round-dots" id="round-dots-p2"><span></span><span></span><span></span></div>
+      </div>
+      <div class="hud-side right">
+        <div class="hud-nameplate right">
+          <div class="hud-meta">
+            <div class="hud-name" id="hud-name-p2">—</div>
+            <div class="hud-nick" id="hud-nick-p2">—</div>
+            <div class="hud-style" id="hud-style-p2">—</div>
+          </div>
+          <div class="hud-portrait" id="portrait-p2"></div>
+        </div>
+        <div class="bar health right"><div class="fill" id="hp-p2"></div><span class="bar-label">HP</span></div>
+        <div class="bar stamina right"><div class="fill" id="st-p2"></div><span class="bar-label">STAMINA</span></div>
+        <div class="bar special right"><div class="fill" id="sp-p2"></div><span class="bar-label">SPECIAL</span></div>
+      </div>
+    </div>
+    <canvas id="arena" width="1280" height="640"></canvas>
+    <div id="announcer"></div>
+    <!-- Touch / click control panel: works on desktop AND mobile. Each button
+         dispatches the same input event as its keyboard counterpart. -->
+    <div id="touch-controls">
+      <div class="tc-side tc-left">
+        <div class="tc-dpad">
+          <button class="tc-btn dpad up"      data-hold="up"     aria-label="Jump">▲</button>
+          <button class="tc-btn dpad left"    data-hold="left"   aria-label="Move left">◀</button>
+          <button class="tc-btn dpad right"   data-hold="right"  aria-label="Move right">▶</button>
+          <button class="tc-btn dpad down"    data-hold="down"   aria-label="Crouch">▼</button>
+        </div>
+        <div class="tc-secondary">
+          <button class="tc-btn def"  data-hold="block"   aria-label="Block">BLOCK</button>
+          <button class="tc-btn def"  data-press="dodge"  aria-label="Dodge">DODGE</button>
+        </div>
+      </div>
+
+      <div class="tc-side tc-right">
+        <div class="tc-row tc-strikes">
+          <button class="tc-btn strike jab"   data-press="jab"        aria-label="Jab">JAB</button>
+          <button class="tc-btn strike cross" data-press="cross"      aria-label="Cross">CROSS</button>
+          <button class="tc-btn strike upper" data-press="uppercut"   aria-label="Uppercut">UPPER</button>
+        </div>
+        <div class="tc-row tc-kicks">
+          <button class="tc-btn kick low"  data-press="low_kick"  aria-label="Low kick">LOW KICK</button>
+          <button class="tc-btn kick mid"  data-press="kick"      aria-label="Mid kick">KICK</button>
+          <button class="tc-btn kick high" data-press="head_kick" aria-label="High kick">HIGH KICK</button>
+        </div>
+        <div class="tc-row tc-special">
+          <button class="tc-btn grapple"   data-press="grapple"    aria-label="Clinch / takedown">CLINCH</button>
+          <button class="tc-btn submit"    data-press="submit"     aria-label="Submission">SUBMIT</button>
+          <button class="tc-btn brk"       data-press="break"      aria-label="Break / stand">BREAK</button>
+          <button class="tc-btn tap"       data-press="tap_escape" aria-label="Tap escape">TAP</button>
+          <button class="tc-btn adv"       data-press="advance"    aria-label="Advance position">ADV</button>
+          <button class="tc-btn special"   data-press="special"    aria-label="Special">SPECIAL</button>
+        </div>
+      </div>
+    </div>
+    <div id="pause-overlay" class="overlay hidden">
+      <div class="overlay-box">
+        <h2>PAUSED</h2>
+        <button class="btn" data-action="resume">RESUME</button>
+        <button class="btn" data-action="quit">QUIT TO MENU</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Result -->
+  <section id="result" class="screen">
+    <h2 id="result-title">VICTORY</h2>
+    <div id="result-detail"></div>
+    <div class="select-actions">
+      <button class="btn primary" data-action="rematch">REMATCH</button>
+      <button class="btn" data-action="back-select">CHANGE FIGHTER</button>
+      <button class="btn" data-action="back-menu">MAIN MENU</button>
+    </div>
+  </section>
+
+  <!-- Modal: How to Play -->
+  <section id="howto" class="screen">
+    <h2>HOW TO PLAY</h2>
+    <div class="howto-grid">
+      <div class="howto-col">
+        <h3>MOVEMENT</h3>
+        <ul>
+          <li><kbd>A</kbd> / <kbd>D</kbd> — walk</li>
+          <li><kbd>W</kbd> — jump / step in</li>
+          <li><kbd>S</kbd> — crouch</li>
+          <li><kbd>Shift</kbd> — dash / dodge</li>
+        </ul>
+      </div>
+      <div class="howto-col">
+        <h3>PUNCHES</h3>
+        <ul>
+          <li><kbd>J</kbd> — jab (fast, low damage)</li>
+          <li><kbd>K</kbd> — cross / hook (heavy)</li>
+          <li><kbd>U</kbd> — uppercut (anti-air, launcher)</li>
+        </ul>
+        <h3>KICKS</h3>
+        <ul>
+          <li><kbd>O</kbd> — low kick (leg, drains stamina)</li>
+          <li><kbd>L</kbd> — mid kick (body)</li>
+          <li><kbd>;</kbd> — HIGH kick (head, big damage)</li>
+        </ul>
+      </div>
+      <div class="howto-col">
+        <h3>DEFENSE & SPECIAL</h3>
+        <ul>
+          <li><kbd>I</kbd> — block (drains stamina)</li>
+          <li><kbd>Shift</kbd> — dodge (i-frames)</li>
+          <li><kbd>Space</kbd> — SPECIAL (needs full meter)</li>
+          <li><kbd>P</kbd> / <kbd>Esc</kbd> — pause</li>
+        </ul>
+      </div>
+      <div class="howto-col">
+        <h3>GRAPPLING & GROUND</h3>
+        <ul>
+          <li><kbd>G</kbd> — clinch (close) or shoot takedown (mid)</li>
+          <li>in clinch: <kbd>J</kbd>/<kbd>K</kbd> dirty punch, <kbd>U</kbd> elbow, <kbd>L</kbd> knee</li>
+          <li>in clinch: <kbd>G</kbd> takedown, <kbd>F</kbd> guillotine, <kbd>T</kbd> break</li>
+          <li>on top (mount): <kbd>J</kbd>/<kbd>K</kbd> ground & pound, <kbd>U</kbd> elbow</li>
+          <li>on top: <kbd>F</kbd> submission, <kbd>R</kbd> advance, <kbd>T</kbd> stand up</li>
+          <li>on bottom: <kbd>F</kbd> triangle/armbar, <kbd>T</kbd>/<kbd>W</kbd> stand up</li>
+          <li>being submitted: <kbd>E</kbd> mash to tap-escape</li>
+        </ul>
+      </div>
+    </div>
+    <div class="howto-tips">
+      <p><strong>Tip:</strong> Build SPECIAL meter by landing strikes and taking hits. Specials are unblockable and deal massive damage.</p>
+      <p><strong>Tip:</strong> Low kicks drain the opponent's stamina; head kicks do the most damage but are slow.</p>
+      <p><strong>Tip:</strong> A perfectly-timed dodge (Shift just before a hit) gives a counter window.</p>
+      <p><strong>Tip:</strong> Each fighter has a <em>specialty</em> (Striker, Boxer, BJJ, Wrestler, Muay Thai…). Grapplers shoot takedowns; strikers keep distance. Weight class changes HP, power, and cadence.</p>
+      <p><strong>Tip:</strong> Press <kbd>G</kbd> close to clinch. In the clinch, knees and elbows are devastating and can't be blocked. Wrestlers convert clinch → takedown → mount → submission.</p>
+    </div>
+    <button class="btn back-btn" data-action="back-menu">BACK</button>
+  </section>
+
+  <!-- Modal: Credits -->
+  <section id="credits" class="screen">
+    <h2>CREDITS</h2>
+    <p>Octagon Fury — Arcade MMA</p>
+    <p>Built as an original arcade fighting game.</p>
+    <p>All fighters, names, and likenesses are entirely fictional and created for this game.<br>
+       This product is not affiliated with or endorsed by any real-world fighting organization, athlete, or league.</p>
+    <p>Sound effects are synthesized in-browser via the Web Audio API.</p>
+    <button class="btn back-btn" data-action="back-menu">BACK</button>
+  </section>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

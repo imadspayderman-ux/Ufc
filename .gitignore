@@ -1,0 +1,8 @@
+# Local test artifacts (Playwright-driven verification scripts and screenshots)
+evidence/
+evidence-*.png
+test-driver.py
+test-plan.md
+test-report.md
+*.pyc
+__pycache__/
