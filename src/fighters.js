@@ -222,8 +222,8 @@ export const ROSTER = [
 // gives each fighter an instantly readable identity. Stats / gameplay
 // (power, speed, grappling, weight class…) are untouched.
 const UNIFORM_HEIGHT = 1.0;
-const UNIFORM_BUILD = 0.86;
-const UNIFORM_MUSCLE = 0.45;
+const UNIFORM_BUILD = 0.78;
+const UNIFORM_MUSCLE = 0.15;
 
 // Per-fighter palette:
 //   body  — main silhouette color (vibrant, easily readable on dark bg)
@@ -233,7 +233,7 @@ const UNIFORM_MUSCLE = 0.45;
 const SIGNATURE = {
   kai:    { hairStyle: 'spiky',       body: '#1f78ff', hair: '#9ce8ff', glove: '#ffffff' }, // electric blue
   tony:   { hairStyle: 'mohawk',      body: '#e02030', hair: '#ffffff', glove: '#1a1a1a' }, // crimson
-  hiro:   { hairStyle: 'topknot',     body: '#e8e8ec', hair: '#1a1a1a', glove: '#cc1133' }, // white karate
+  hiro:   { hairStyle: 'topknot',     body: '#050505', hair: '#f2f2f2', glove: '#cc1133' }, // black silhouette
   boris:  { hairStyle: 'wild',        body: '#ff7d1a', hair: '#3a2010', glove: '#1a1a1a' }, // wild orange
   rafa:   { hairStyle: 'long_pony',   body: '#1ea84a', hair: '#1a0e08', glove: '#ffffff' }, // jungle green
   amir:   { hairStyle: 'crew',        body: '#e8b340', hair: '#1a1a1a', glove: '#1a1a1a' }, // sand gold

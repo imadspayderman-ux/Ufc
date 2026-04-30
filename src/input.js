@@ -2,6 +2,7 @@
 const held = new Set();
 const pressed = new Set(); // edge-triggered (consumed each frame after read)
 const listeners = [];
+const pointerHeld = new Map();
 
 const KEY_MAP = {
   // Movement
@@ -55,7 +56,7 @@ export function consumePressed(action) {
   return false;
 }
 export function clearPressed() { pressed.clear(); }
-export function clearAll() { held.clear(); pressed.clear(); }
+export function clearAll() { held.clear(); pressed.clear(); pointerHeld.clear(); }
 export function onKey(cb) { listeners.push(cb); }
 
 // Programmatic input — used by on-screen touch buttons.
@@ -78,4 +79,19 @@ export function triggerPress(action) {
   listeners.forEach((l) => l('down', action));
   // Auto-release on next frame so it acts like a tap.
   setTimeout(() => listeners.forEach((l) => l('up', action)), 0);
+}
+export function beginPointerHold(pointerId, action) {
+  if (!action) return;
+  pointerHeld.set(pointerId, action);
+  pressDown(action);
+}
+export function endPointerHold(pointerId) {
+  const action = pointerHeld.get(pointerId);
+  if (!action) return;
+  pointerHeld.delete(pointerId);
+  if (![...pointerHeld.values()].includes(action)) pressUp(action);
+}
+export function releasePointerHolds() {
+  for (const action of new Set(pointerHeld.values())) pressUp(action);
+  pointerHeld.clear();
 }
