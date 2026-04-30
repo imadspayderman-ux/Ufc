@@ -406,23 +406,29 @@ function applyP2Input(match) {
 
 function loop() {
   state.loopId = requestAnimationFrame(loop);
-  if (!state.match || state.screen !== 'fight') return;
-  if (state.paused) {
+  try {
+    if (!state.match || state.screen !== 'fight') return;
+    if (state.paused) {
+      renderer.draw(state.match);
+      return;
+    }
+    if (state.match.state === 'fight') {
+      applyP1Input(state.match);
+      applyP2Input(state.match);
+    }
+    state.match.step(1 / 60);
+    // process events
+    for (const ev of state.match.drainEvents()) {
+      handleEvent(ev);
+    }
+    updateHUD(state.match);
     renderer.draw(state.match);
-    return;
+    drawAnnouncer(state.match);
+  } catch (err) {
+    console.error(err);
+    Input.clearAll();
+    showAnnounce('INPUT RESET', false);
   }
-  if (state.match.state === 'fight') {
-    applyP1Input(state.match);
-    applyP2Input(state.match);
-  }
-  state.match.step(1 / 60);
-  // process events
-  for (const ev of state.match.drainEvents()) {
-    handleEvent(ev);
-  }
-  updateHUD(state.match);
-  renderer.draw(state.match);
-  drawAnnouncer(state.match);
 }
 
 function handleEvent(ev) {
@@ -584,14 +590,29 @@ function wireTouchButton(btn) {
   let active = false;
   const start = (e) => {
     e.preventDefault();
+    if (e.pointerId !== undefined) {
+      try { btn.setPointerCapture(e.pointerId); } catch (_) { /* pointer already released */ }
+    }
+    if (active) return;
     btn.classList.add('active');
-    if (hold) { Input.pressDown(hold); active = true; }
+    if (hold) {
+      if (e.pointerId !== undefined) Input.beginPointerHold(e.pointerId, hold);
+      else Input.pressDown(hold);
+      active = true;
+    }
     else if (trig) Input.triggerPress(trig);
   };
   const end = (e) => {
     e.preventDefault();
+    if (e.pointerId !== undefined && btn.hasPointerCapture(e.pointerId)) {
+      try { btn.releasePointerCapture(e.pointerId); } catch (_) { /* pointer already released */ }
+    }
     btn.classList.remove('active');
-    if (hold && active) { Input.pressUp(hold); active = false; }
+    if (hold && active) {
+      if (e.pointerId !== undefined) Input.endPointerHold(e.pointerId);
+      else Input.pressUp(hold);
+      active = false;
+    }
   };
   // Use pointer events so a single handler covers mouse + touch + pen.
   btn.addEventListener('pointerdown', start);
@@ -608,6 +629,7 @@ document.querySelectorAll('#touch-controls .tc-btn').forEach(wireTouchButton);
 // back to a stuck input. Pairs with the `held.clear()` in input.js's blur
 // handler.
 window.addEventListener('blur', () => {
+  Input.releasePointerHolds();
   document.querySelectorAll('#touch-controls .tc-btn.active').forEach((b) => b.classList.remove('active'));
 });
 

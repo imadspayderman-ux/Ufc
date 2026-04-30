@@ -270,13 +270,14 @@ export class Renderer {
     const bd = f.data.build || 1.0;
     const ht = f.data.height || 1.0;
     const speedGhost = Math.min(1, Math.abs(f.vx || 0) / 5 + (f.stepBurst || 0) * 0.35);
+    const shadowMotion = f.state === 'walk' ? 0 : speedGhost;
 
     // shadow
     ctx.save();
     ctx.scale(1 / f.facing, 1);
-    ctx.fillStyle = `rgba(0,0,0,${0.42 + speedGhost * 0.18})`;
+    ctx.fillStyle = `rgba(0,0,0,${0.38 + shadowMotion * 0.16})`;
     ctx.beginPath();
-    ctx.ellipse((f.vx || 0) * -2, 4, (50 + speedGhost * 18) * bd, 8 + speedGhost * 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(shadowMotion ? (f.vx || 0) * -2 : 0, 4, (50 + shadowMotion * 18) * bd, 8 + shadowMotion * 2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
@@ -290,7 +291,7 @@ export class Renderer {
     smoothJoints(pose, f, t);
 
     // legs: behind body
-    if (speedGhost > 0.28 && ['walk', 'dodge', 'hit', 'wobble'].includes(f.state)) {
+    if (speedGhost > 0.28 && ['dodge', 'hit', 'wobble'].includes(f.state)) {
       drawMotionGhost(ctx, pose, p, bd, ht, f, Math.max(0.18, speedGhost * 0.35));
     }
     drawLeg(ctx, pose.legR, p, bd);
