@@ -1884,7 +1884,7 @@ function drawLeg(ctx, leg, p, bd) {
 
 function drawMotionGhost(ctx, pose, p, bd, ht, f, alpha) {
   const base = p.body || p.skin || '#070707';
-  const offset = -Math.sign((f.vx || 0) || (f.facing || 1)) * (16 + Math.abs(f.vx || 0) * 1.2 + (f.stepBurst || 0) * 20);
+  const offset = -Math.sign(((f.vx || 0) || (f.facing || 1)) * (f.facing || 1)) * (16 + Math.abs(f.vx || 0) * 1.2 + (f.stepBurst || 0) * 20);
   ctx.save();
   ctx.translate(offset, 0);
   ctx.globalAlpha = alpha;
