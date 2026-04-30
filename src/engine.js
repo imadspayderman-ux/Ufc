@@ -91,6 +91,9 @@ export class FighterState {
     this.y = ARENA.groundY;
     this.vx = 0;
     this.vy = 0;
+    this.lastX = this.x;
+    this.stepBurst = 0;
+    this.balanceShift = 0;
 
     const wc = getWeightClass(data);
     this.weightClass = wc;
@@ -273,13 +276,15 @@ export class FighterState {
     this.state = 'dodge';
     this.dodgeFrames = 18;
     this.dodgeIFrames = 9;
-    this.vx = -this.facing * 7;
+    this.vx = -this.facing * 9.2;
+    this.stepBurst = 1.15;
   }
 
   startJump() {
     if (!this.isActionable() || !this.isOnGround()) return;
     this.state = 'jump';
     this.vy = -16;
+    this.stepBurst = 0.65;
   }
 
   takeHit(dmg, attacker, attack, blockedFlag) {
@@ -338,12 +343,14 @@ export class FighterState {
     // negative vy) for that classic MMA "rocked" look.
     const dir = attacker.x < this.x ? 1 : -1;
     const dmgKick = blocked ? 0 : Math.min(6, dmg * 0.22);
-    this.vx = dir * ((attack.pushback || 5) + dmgKick) * (blocked ? 0.4 : 1);
+    this.vx = dir * ((attack.pushback || 5) + dmgKick) * (blocked ? 0.45 : 1.12);
+    this.stepBurst = blocked ? 0.32 : Math.min(1.4, 0.45 + actualDmg / 18);
+    this.balanceShift = dir * (blocked ? 0.35 : Math.min(1.2, 0.45 + actualDmg / 26));
     if (attack.launch && !blocked) {
       this.vy = -10;
     } else if (!blocked && dmg >= 14) {
       // Heavy non-launcher strike: slight hop to sell the impact.
-      this.vy = Math.min(this.vy, -2.5);
+      this.vy = Math.min(this.vy, -3.3);
     }
 
     if (this.hp <= 0) {
@@ -1528,6 +1535,11 @@ export class Match {
         f.wobbleHelpless = 0;
       }
     }
+
+    const moved = f.x - (typeof f.lastX === 'number' ? f.lastX : f.x);
+    f.lastX = f.x;
+    f.stepBurst = Math.max(0, (f.stepBurst || 0) - 0.07);
+    f.balanceShift *= 0.9;
 
     // Always face opponent unless mid-attack/hit/grapple
     if (['idle', 'walk', 'crouch', 'block', 'jump'].includes(f.state)) {

@@ -11,6 +11,8 @@ function parseHex(c) {
 }
 function toHex(n) { return Math.max(0, Math.min(255, n | 0)).toString(16).padStart(2, '0'); }
 function shadeColor(c, pct) {
+  if (typeof c === 'string' && c.startsWith('rgba')) return c;
+  if (typeof c === 'string' && c.startsWith('rgb')) return c;
   // pct in [-1..1]: negative darkens, positive lightens.
   const { r, g, b } = parseHex(c);
   if (pct >= 0) {
@@ -89,6 +91,14 @@ export class Renderer {
     g.addColorStop(0.7, '#0a0810');
     g.addColorStop(1, '#000');
     ctx.fillStyle = g;
+    ctx.fillRect(0, 0, ARENA.width, ARENA.height);
+
+    const pulse = (Math.sin(tick * 0.028) + 1) * 0.5;
+    const backHalo = ctx.createRadialGradient(ARENA.width / 2, 250, 80, ARENA.width / 2, 250, 560);
+    backHalo.addColorStop(0, `rgba(255,204,80,${0.08 + pulse * 0.035})`);
+    backHalo.addColorStop(0.45, 'rgba(70,110,255,0.045)');
+    backHalo.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = backHalo;
     ctx.fillRect(0, 0, ARENA.width, ARENA.height);
 
     // ---------- Overhead spotlights with lens flare ----------
@@ -183,6 +193,12 @@ export class Renderer {
     ctx.fillStyle = '#2a2a32';
     ctx.fillRect(0, fenceTop - 4, ARENA.width, 6);
     ctx.fillRect(0, fenceBottom - 2, ARENA.width, 6);
+    ctx.strokeStyle = 'rgba(255,204,70,0.22)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, fenceTop + 10);
+    ctx.lineTo(ARENA.width, fenceTop + 10);
+    ctx.stroke();
 
     // ---------- Octagon mat (perspective trapezoid) ----------
     const matTop = 500, matBot = ARENA.height;
@@ -220,6 +236,19 @@ export class Renderer {
     ctx.font = 'bold 48px Impact, Arial Black, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('OCTAGON FURY', 0, 12);
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+      const ang = (Math.PI * 2 * i) / 8 + 0.12;
+      const x1 = Math.cos(ang) * ARENA.width * 0.11;
+      const y1 = Math.sin(ang) * 10;
+      const x2 = Math.cos(ang) * ARENA.width * 0.36;
+      const y2 = Math.sin(ang) * 24;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
     ctx.restore();
 
     // ---------- Floor reflection beneath fighters ----------
@@ -240,13 +269,14 @@ export class Renderer {
     const p = f.data.palette;
     const bd = f.data.build || 1.0;
     const ht = f.data.height || 1.0;
+    const speedGhost = Math.min(1, Math.abs(f.vx || 0) / 5 + (f.stepBurst || 0) * 0.35);
 
     // shadow
     ctx.save();
     ctx.scale(1 / f.facing, 1);
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillStyle = `rgba(0,0,0,${0.42 + speedGhost * 0.18})`;
     ctx.beginPath();
-    ctx.ellipse(0, 4, 50 * bd, 8, 0, 0, Math.PI * 2);
+    ctx.ellipse((f.vx || 0) * -2, 4, (50 + speedGhost * 18) * bd, 8 + speedGhost * 2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
@@ -260,6 +290,9 @@ export class Renderer {
     smoothJoints(pose, f, t);
 
     // legs: behind body
+    if (speedGhost > 0.28 && ['walk', 'dodge', 'hit', 'wobble'].includes(f.state)) {
+      drawMotionGhost(ctx, pose, p, bd, ht, f, Math.max(0.18, speedGhost * 0.35));
+    }
     drawLeg(ctx, pose.legR, p, bd);
     drawLeg(ctx, pose.legL, p, bd);
 
@@ -311,6 +344,7 @@ export class Renderer {
 
     // torso
     drawTorso(ctx, pose, p, bd, ht, f.data);
+    drawMuscleHighlights(ctx, pose, p, bd, ht, f.data);
 
     // head (sits on top of torso neck)
     drawHead(ctx, pose, p, ht, f);
@@ -405,6 +439,14 @@ export class Renderer {
     if (match.shake > 0) {
       const s = match.shake * 0.6;
       ctx.translate((Math.random() - 0.5) * s, (Math.random() - 0.5) * s);
+    }
+    if (match.state === 'fight') {
+      const center = (match.p1.x + match.p2.x) / 2;
+      const dist = Math.abs(match.p1.x - match.p2.x);
+      const zoom = Math.min(1.05, Math.max(1, 1.06 - dist / 1600));
+      const targetX = ARENA.width / 2 - center;
+      ctx.translate((1 - zoom) * ARENA.width / 2 + targetX * 0.035, (1 - zoom) * ARENA.height / 2);
+      ctx.scale(zoom, zoom);
     }
     // Intro: apply a subtle camera pan/zoom during the "pan" phase.
     if (match.state === 'intro' && match.introPhase === 'pan') {
@@ -521,17 +563,25 @@ export class Renderer {
       const ay = g.a.y - 180;
       const by = g.b.y - 180;
       const midX = (g.a.x + g.b.x) / 2;
+      const tug = Math.sin((match.tick || 0) * 0.18) * 6;
+      ctx.strokeStyle = 'rgba(255,204,70,0.24)';
+      ctx.lineWidth = 18;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(g.a.x + 30 * g.a.facing, ay + 8);
+      ctx.quadraticCurveTo(midX + tug, ay - 30, g.b.x + 30 * g.b.facing, by + 8);
+      ctx.stroke();
       ctx.strokeStyle = 'rgba(30,30,30,0.55)';
       ctx.lineWidth = 10;
       ctx.lineCap = 'round';
       // Arms reach across the new wider 42px gap.
       ctx.beginPath();
       ctx.moveTo(g.a.x + 38 * g.a.facing, ay);
-      ctx.quadraticCurveTo(midX, ay - 22, g.b.x + 38 * g.b.facing, by);
+      ctx.quadraticCurveTo(midX + tug, ay - 22, g.b.x + 38 * g.b.facing, by);
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(g.a.x + 38 * g.a.facing, ay + 14);
-      ctx.quadraticCurveTo(midX, ay + 6, g.b.x + 38 * g.b.facing, by + 14);
+      ctx.quadraticCurveTo(midX - tug, ay + 6, g.b.x + 38 * g.b.facing, by + 14);
       ctx.stroke();
     }
     // Ground submission lock visual
@@ -703,6 +753,8 @@ function computePose(f, t) {
       handX: 16 * bd, handY: -76,
     },
   };
+  const momentum = Math.max(-1.2, Math.min(1.2, ((f.vx || 0) / 5) + (f.balanceShift || 0) * 0.45));
+  const stepBurst = f.stepBurst || 0;
 
   // Weight-class + specialty aware breathing/walk cadence.
   const cadence = (f.data && f.specialty && f.specialty.walkCadence) || 1.0;
@@ -710,9 +762,12 @@ function computePose(f, t) {
   // Idle breathing — subtle sine sway on chest and head.
   if (f.state === 'idle' || f.state === 'walk') {
     const breath = Math.sin(t * 0.11) * 1.8;
-    const bob = Math.sin(t * 0.2) * 1.2 * bobAmp;
+    const bob = Math.sin(t * 0.2) * (1.2 + stepBurst * 0.9) * bobAmp;
     pose.pelvis.y -= bob + breath * 0.3;
     pose.headOffset.y -= bob + breath * 0.2;
+    pose.pelvis.x += momentum * 2;
+    pose.torsoAngle += momentum * 0.045;
+    pose.headOffset.x += momentum * 2.2;
     // Shoulder sway for back-and-forth of breathing.
     pose.armBack.shoulderY += breath * 0.3;
     pose.armFront.shoulderY += breath * 0.3;
@@ -722,8 +777,8 @@ function computePose(f, t) {
     // pronounced arm swing in counter-phase to the legs, head bob with stride.
     const dir = typeof f.movingDirection === 'number' ? f.movingDirection : 1;
     const retreat = dir < 0;
-    const strideFreq = 0.34 * cadence * (retreat ? 0.7 : 1.0);
-    const strideMag = retreat ? 0.6 : 1.0;
+    const strideFreq = 0.40 * cadence * (retreat ? 0.76 : 1.0);
+    const strideMag = (retreat ? 0.72 : 1.08) + stepBurst * 0.26;
     const stride = Math.sin(t * strideFreq) * strideMag;          // -1..1
     const strideAbs = Math.abs(stride);
     const liftR = Math.max(0, stride);   // R leg lifts on positive phase
@@ -731,14 +786,14 @@ function computePose(f, t) {
 
     // FEET — lifted leg pulls forward + up, planted leg pushes back + grips ground.
     // The foot rolls heel-to-toe so on lift the foot tilts forward (footY goes up).
-    pose.legR.footX = 24 * bd + stride * (retreat ? 10 : 22);
-    pose.legR.footY = -liftR * 22 * bobAmp;
-    pose.legR.kneeX = 16 * bd + stride * 10;
-    pose.legR.kneeY = -42 - liftR * 22 * bobAmp;
-    pose.legL.footX = -20 * bd + stride * (retreat ? 10 : 22);
-    pose.legL.footY = -liftL * 22 * bobAmp;
-    pose.legL.kneeX = -14 * bd + stride * 10;
-    pose.legL.kneeY = -42 - liftL * 22 * bobAmp;
+    pose.legR.footX = 24 * bd + stride * (retreat ? 12 : 26) + momentum * 5;
+    pose.legR.footY = -liftR * (24 + stepBurst * 10) * bobAmp;
+    pose.legR.kneeX = 16 * bd + stride * 12 + momentum * 4;
+    pose.legR.kneeY = -42 - liftR * (24 + stepBurst * 8) * bobAmp;
+    pose.legL.footX = -20 * bd + stride * (retreat ? 12 : 26) + momentum * 4;
+    pose.legL.footY = -liftL * (24 + stepBurst * 10) * bobAmp;
+    pose.legL.kneeX = -14 * bd + stride * 12 + momentum * 3;
+    pose.legL.kneeY = -42 - liftL * (24 + stepBurst * 8) * bobAmp;
     // Hips raise on each plant, dip mid-step — classic walking sine
     pose.pelvis.y = -82 + strideAbs * 4 * bobAmp - 3;
     pose.pelvis.x = stride * (retreat ? 1 : 3);
@@ -746,33 +801,33 @@ function computePose(f, t) {
     // TORSO COUNTER-ROTATION — shoulders rotate OPPOSITE to hips for proper gait.
     // (When R foot is forward, R hip is forward, but R shoulder is BACK.)
     const lean = (1 - bobAmp) * 0.10 + (retreat ? -0.04 : 0.03);
-    pose.torsoAngle = -stride * 0.12 + lean;
+    pose.torsoAngle = -stride * 0.14 + lean + momentum * 0.055;
 
     // ARMS — natural pendulum swing at hip level (NOT raised guard).
     // Hand swings forward when same-side leg is back, in counter-phase.
     if (retreat) {
       // Backpedaling: hands stay slightly raised but still relaxed, small swing.
-      pose.armFront.handX = 16 * bd - stride * 8; pose.armFront.handY = -90;
+      pose.armFront.handX = 16 * bd - stride * 10 + momentum * 5; pose.armFront.handY = -96 - stepBurst * 6;
       pose.armFront.elbowX = 20 * bd;            pose.armFront.elbowY = -118;
-      pose.armBack.handX = -12 * bd + stride * 8;  pose.armBack.handY = -90;
+      pose.armBack.handX = -12 * bd + stride * 10 + momentum * 3;  pose.armBack.handY = -96 - stepBurst * 5;
       pose.armBack.elbowX = -18 * bd;             pose.armBack.elbowY = -118;
     } else {
       // Forward walk: pronounced opposite-arm pendulum swing at hip level
       // — like a real walk, NOT a held-up boxing guard.
       // Front arm = lead-side; swings BACKWARD when lead leg moves forward.
-      pose.armFront.handX = 16 * bd - stride * 30;
+      pose.armFront.handX = 16 * bd - stride * 34 + momentum * 5;
       pose.armFront.handY = -76 + strideAbs * 6;
       pose.armFront.elbowX = 22 * bd - stride * 16;
       pose.armFront.elbowY = -114 + strideAbs * 2;
       // Back arm = rear-side; swings FORWARD when lead leg moves forward.
-      pose.armBack.handX = -16 * bd + stride * 30;
+      pose.armBack.handX = -16 * bd + stride * 34 + momentum * 4;
       pose.armBack.handY = -76 + strideAbs * 6;
       pose.armBack.elbowX = -22 * bd + stride * 16;
       pose.armBack.elbowY = -114 + strideAbs * 2;
     }
 
     // HEAD — bobs vertically with stride, sways laterally with shoulder rotation
-    pose.headOffset.x = -2 + stride * 3;
+    pose.headOffset.x = -2 + stride * 3.6 + momentum * 2.2;
     pose.headOffset.y = -152 * ht + strideAbs * 3 * bobAmp - 2;
   }
   if (f.state === 'crouch') {
@@ -790,11 +845,19 @@ function computePose(f, t) {
     pose.headOffset.y = -148;
   }
   if (f.state === 'dodge') {
-    const k = f.dodgeFrames / 18;
-    const lean = -10 * Math.sin((1 - k) * Math.PI);
+    const k = Math.max(0, Math.min(1, f.dodgeFrames / 18));
+    const wave = Math.sin((1 - k) * Math.PI);
+    const lean = -28 * wave;
     pose.pelvis.x = lean;
-    pose.headOffset.x = lean - 4;
-    pose.headOffset.y = -148;
+    pose.pelvis.y = -72 + wave * 6;
+    pose.torsoAngle = -0.34 * wave;
+    pose.headOffset.x = lean - 12 * wave;
+    pose.headOffset.y = -144 + wave * 6;
+    pose.armFront.handX = 10 - 18 * wave; pose.armFront.handY = -138 + 8 * wave;
+    pose.armBack.handX = -6 - 18 * wave; pose.armBack.handY = -132 + 10 * wave;
+    pose.legL.footX = -30 * bd - 18 * wave;
+    pose.legR.footX = 18 * bd - 12 * wave;
+    pose.legR.kneeY = -38 + 8 * wave;
   }
   if (f.state === 'jump') {
     pose.pelvis.y = -82 - Math.max(0, ARENA.groundY - f.y) * 0.05;
@@ -1239,6 +1302,10 @@ function computePose(f, t) {
     // After lock-in, cinch amplitude scales with progress (0 at lock-in
     // moment, much stronger near finish). This drives the body deformation.
     const cinch = lockTotal === 0 ? pull : 0;
+    pose.pelvis.x += Math.sin(t * 0.36) * (1 + prog * 4);
+    pose.headOffset.x += Math.cos(t * 0.42) * (1 + prog * 3);
+    pose.armFront.handX += Math.sin(t * 0.44) * (1 + prog * 2);
+    pose.armBack.handX -= Math.sin(t * 0.41) * (1 + prog * 2);
 
     if (subKind === 'armbar') {
       // ARMBAR: attacker is on his BACK with hips up against opponent's
@@ -1815,6 +1882,23 @@ function drawLeg(ctx, leg, p, bd) {
   ctx.restore();
 }
 
+function drawMotionGhost(ctx, pose, p, bd, ht, f, alpha) {
+  const base = p.body || p.skin || '#070707';
+  const offset = -Math.sign((f.vx || 0) || (f.facing || 1)) * (16 + Math.abs(f.vx || 0) * 1.2 + (f.stepBurst || 0) * 20);
+  ctx.save();
+  ctx.translate(offset, 0);
+  ctx.globalAlpha = alpha;
+  const ghostPalette = { ...p, body: shadeColor(base, 0.35) };
+  ctx.globalCompositeOperation = 'screen';
+  drawLeg(ctx, pose.legR, ghostPalette, bd);
+  drawLeg(ctx, pose.legL, ghostPalette, bd);
+  drawArm(ctx, pose.armBack, ghostPalette, bd, true);
+  drawTorso(ctx, pose, ghostPalette, bd, ht, f.data);
+  drawHead(ctx, pose, ghostPalette, ht, f);
+  drawArm(ctx, pose.armFront, ghostPalette, bd, false);
+  ctx.restore();
+}
+
 function drawTorso(ctx, pose, p, bd, ht, data) {
   // Pure silhouette torso — single solid black body shape, no muscle shading,
   // no belly bulge, no sports-bra detail. The fighter's identity comes from
@@ -2122,6 +2206,35 @@ function drawArm(ctx, arm, p, bd, isBack) {
   ctx.fill();
 
   ctx.restore();
+  ctx.restore();
+}
+
+function drawMuscleHighlights(ctx, pose, p, bd, ht, data) {
+  const accent = p.accent || p.gloves || '#ffffff';
+  const muscle = data && typeof data.muscle === 'number' ? data.muscle : 0.75;
+  const belly = data && typeof data.belly === 'number' ? data.belly : 0;
+  ctx.save();
+  ctx.translate(pose.pelvis.x, pose.pelvis.y);
+  ctx.rotate(pose.torsoAngle);
+  ctx.globalAlpha = 0.32 + muscle * 0.18;
+  ctx.strokeStyle = withAlpha(accent, 0.65);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-18 * bd, -54 * ht);
+  ctx.quadraticCurveTo(-8 * bd, -62 * ht, 0, -55 * ht);
+  ctx.quadraticCurveTo(8 * bd, -62 * ht, 18 * bd, -54 * ht);
+  ctx.stroke();
+  ctx.globalAlpha = 0.18 + muscle * 0.16;
+  ctx.strokeStyle = 'rgba(255,255,255,0.72)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(0, -48 * ht);
+  ctx.lineTo(0, -12 - belly * 3);
+  ctx.moveTo(-10 * bd, -34 * ht);
+  ctx.lineTo(10 * bd, -34 * ht);
+  ctx.moveTo(-8 * bd, -22 * ht);
+  ctx.lineTo(8 * bd, -22 * ht);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -2725,6 +2838,7 @@ function drawFighterStandalone(ctx, fs, fighter) {
   ctx.restore();
   drawArm(ctx, pose.armBack, p, bd, true);
   drawTorso(ctx, pose, p, bd, ht, fighter);
+  drawMuscleHighlights(ctx, pose, p, bd, ht, fighter);
   drawHead(ctx, pose, p, ht, fs);
   drawArm(ctx, pose.armFront, p, bd, false);
   ctx.restore();

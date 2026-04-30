@@ -328,8 +328,8 @@ function applyP1Input(match) {
   // Movement
   if (p.isActionable() && p.state !== 'block' && p.state !== 'crouch') {
     let walking = false;
-    if (Input.isHeld('left')) { p.vx -= 0.6; walking = true; }
-    if (Input.isHeld('right')) { p.vx += 0.6; walking = true; }
+    if (Input.isHeld('left')) { p.vx -= 0.82; walking = true; }
+    if (Input.isHeld('right')) { p.vx += 0.82; walking = true; }
     p.vx = Math.max(-speed, Math.min(speed, p.vx));
     if (p.isOnGround()) {
       p.state = walking ? 'walk' : 'idle';
@@ -383,8 +383,8 @@ function applyP2Input(match) {
 
   if (p.isActionable() && p.state !== 'block') {
     let walking = false;
-    if (cmd.left) { p.vx -= 0.55; walking = true; }
-    if (cmd.right) { p.vx += 0.55; walking = true; }
+    if (cmd.left) { p.vx -= 0.74; walking = true; }
+    if (cmd.right) { p.vx += 0.74; walking = true; }
     p.vx = Math.max(-speed, Math.min(speed, p.vx));
     if (p.isOnGround()) p.state = walking ? 'walk' : 'idle';
   }
