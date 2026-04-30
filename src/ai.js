@@ -232,6 +232,11 @@ export class AI {
     if (self.state === 'sub_offense') return { cmd, action };
     if (self.state === 'clinch') {
       if (this.intent === 'break_clinch') { match.tryBreakClinch(self); return { cmd, action }; }
+      if (opp.attack && Math.random() < 0.35 + 0.1 * this.diff) {
+        self.clinchGuardFrames = 18;
+        self.stamina = Math.max(0, self.stamina - 2);
+        return { cmd, action };
+      }
       if (this.intent === 'takedown') { match.tryTakedown(self, opp); return { cmd, action }; }
       if (this.intent === 'clinch_attack' && this.attackQueue) {
         action = this.attackQueue; this.attackQueue = null;
@@ -259,6 +264,11 @@ export class AI {
       return { cmd, action };
     }
     if (self.state === 'ground_bottom') {
+      if (opp.attack && Math.random() < 0.45 + 0.1 * this.diff) {
+        self.groundShellFrames = 20;
+        self.stamina = Math.max(0, self.stamina - 2);
+        return { cmd, action };
+      }
       if (this.intent === 'sub_from_guard' && this.intentDur === 9) {
         if (!match.attemptSubmission(self, 'triangle')) match.attemptSubmission(self, 'armbar');
         return { cmd, action };

@@ -233,6 +233,11 @@ function applyP1Input(match) {
   }
   if (p.state === 'clinch') {
     if (Input.consumePressed('break')) { match.tryBreakClinch(p); return; }
+    if (Input.consumePressed('block') || Input.consumePressed('tap_escape')) {
+      p.clinchGuardFrames = 18;
+      p.stamina = Math.max(0, p.stamina - 2);
+      return;
+    }
     if (Input.consumePressed('grapple')) { match.tryTakedown(p, opp); return; }
     if (Input.consumePressed('submit')) {
       // Front headlock submissions available from clinch
@@ -273,6 +278,11 @@ function applyP1Input(match) {
     return;
   }
   if (p.state === 'ground_bottom') {
+    if (Input.consumePressed('block') || Input.consumePressed('tap_escape') || Input.consumePressed('down')) {
+      p.groundShellFrames = 20;
+      p.stamina = Math.max(0, p.stamina - 2);
+      return;
+    }
     if (Input.consumePressed('break') || Input.consumePressed('up')) { match.tryStandUp(p); return; }
     // Sweep / reversal — F (advance) from bottom in guard or half-guard
     // attempts to reverse top to bottom and end up in side_control.
@@ -295,6 +305,8 @@ function applyP1Input(match) {
       if (match.attemptSubmission(p, 'anaconda')) return;
       if (match.attemptSubmission(p, 'guillotine')) return;
     }
+    if (Input.consumePressed('jab')) tryAttack(p, 'dirty_punch');
+    if (Input.consumePressed('cross')) tryAttack(p, 'dirty_punch');
     return;
   }
   if (p.state === 'front_headlock_bottom') {
