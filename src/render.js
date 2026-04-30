@@ -344,7 +344,6 @@ export class Renderer {
 
     // torso
     drawTorso(ctx, pose, p, bd, ht, f.data);
-    drawMuscleHighlights(ctx, pose, p, bd, ht, f.data);
 
     // head (sits on top of torso neck)
     drawHead(ctx, pose, p, ht, f);
@@ -803,27 +802,20 @@ function computePose(f, t) {
     const lean = (1 - bobAmp) * 0.10 + (retreat ? -0.04 : 0.03);
     pose.torsoAngle = -stride * 0.14 + lean + momentum * 0.055;
 
-    // ARMS — natural pendulum swing at hip level (NOT raised guard).
-    // Hand swings forward when same-side leg is back, in counter-phase.
     if (retreat) {
-      // Backpedaling: hands stay slightly raised but still relaxed, small swing.
-      pose.armFront.handX = 16 * bd - stride * 10 + momentum * 5; pose.armFront.handY = -96 - stepBurst * 6;
-      pose.armFront.elbowX = 20 * bd;            pose.armFront.elbowY = -118;
-      pose.armBack.handX = -12 * bd + stride * 10 + momentum * 3;  pose.armBack.handY = -96 - stepBurst * 5;
-      pose.armBack.elbowX = -18 * bd;             pose.armBack.elbowY = -118;
+      pose.armFront.handX = 24 * bd - stride * 8 + momentum * 4; pose.armFront.handY = -132 - stepBurst * 4;
+      pose.armFront.elbowX = 22 * bd - stride * 4; pose.armFront.elbowY = -116 + strideAbs * 2;
+      pose.armBack.handX = 4 * bd + stride * 6 + momentum * 3;  pose.armBack.handY = -142 - stepBurst * 3;
+      pose.armBack.elbowX = -10 * bd + stride * 4; pose.armBack.elbowY = -120 + strideAbs * 2;
     } else {
-      // Forward walk: pronounced opposite-arm pendulum swing at hip level
-      // — like a real walk, NOT a held-up boxing guard.
-      // Front arm = lead-side; swings BACKWARD when lead leg moves forward.
-      pose.armFront.handX = 16 * bd - stride * 34 + momentum * 5;
-      pose.armFront.handY = -76 + strideAbs * 6;
-      pose.armFront.elbowX = 22 * bd - stride * 16;
+      pose.armFront.handX = 26 * bd - stride * 10 + momentum * 4;
+      pose.armFront.handY = -130 + strideAbs * 3 - stepBurst * 5;
+      pose.armFront.elbowX = 22 * bd - stride * 7;
       pose.armFront.elbowY = -114 + strideAbs * 2;
-      // Back arm = rear-side; swings FORWARD when lead leg moves forward.
-      pose.armBack.handX = -16 * bd + stride * 34 + momentum * 4;
-      pose.armBack.handY = -76 + strideAbs * 6;
-      pose.armBack.elbowX = -22 * bd + stride * 16;
-      pose.armBack.elbowY = -114 + strideAbs * 2;
+      pose.armBack.handX = 2 * bd + stride * 8 + momentum * 3;
+      pose.armBack.handY = -142 + strideAbs * 2 - stepBurst * 4;
+      pose.armBack.elbowX = -10 * bd + stride * 5;
+      pose.armBack.elbowY = -120 + strideAbs * 2;
     }
 
     // HEAD — bobs vertically with stride, sways laterally with shoulder rotation
@@ -1654,19 +1646,20 @@ function applyAttackPose(pose, kind, k, phase, f) {
       const reach = phase === 'recovery' ? k * k : easeOut; // sharp snap, soft return
       const overshoot = phase === 'active' ? Math.sin(k * Math.PI) * 0.08 : 0;
       const r = reach + overshoot;
-      pose.armFront.elbowX = 18 + r * 38;
-      pose.armFront.elbowY = -132 - r * 4;
-      pose.armFront.handX = 26 + r * 78;
-      pose.armFront.handY = -134 - r * 4;
-      // Rear hand stays glued to chin in proper boxing form.
-      pose.armBack.handX = 6; pose.armBack.handY = -148;
-      pose.armBack.elbowX = -10; pose.armBack.elbowY = -126;
-      pose.torsoAngle = 0.12 * reach;
-      pose.pelvis.x = reach * 4;
-      pose.legR.footX = 28 * 0.86 + reach * 10;  // lead foot stamps forward
-      pose.legL.footY = -reach * 3;              // back foot rises on toe
+      const chamber = phase === 'startup' ? 1 - easeOut : 0;
+      pose.armFront.elbowX = 20 + r * 34 - chamber * 8;
+      pose.armFront.elbowY = -126 - r * 4 - chamber * 8;
+      pose.armFront.handX = 24 + r * 86 - chamber * 12;
+      pose.armFront.handY = -132 - r * 4 - chamber * 7;
+      pose.armBack.handX = 7 - r * 2; pose.armBack.handY = -144 - r * 2;
+      pose.armBack.elbowX = -9; pose.armBack.elbowY = -124;
+      pose.torsoAngle = 0.09 * reach;
+      pose.pelvis.x = reach * 3;
+      pose.legR.footX = 28 * bd + reach * 9;
+      pose.legR.kneeX = 20 * bd + reach * 5;
+      pose.legL.footY = -reach * 2;
       pose.headOffset.x = -2 + reach * 4;
-      pose.headOffset.y = -152 - reach * 2;     // slight head tuck behind shoulder
+      pose.headOffset.y = -152 - reach * 2;
       break;
     }
     case 'cross': {
@@ -1677,23 +1670,21 @@ function applyAttackPose(pose, kind, k, phase, f) {
       // back to guard.
       const overshoot = phase === 'active' ? Math.sin(k * Math.PI) * 0.12 : 0;
       const reach = easeOut + overshoot;
-      pose.armBack.elbowX = -2 + reach * 38;
-      pose.armBack.elbowY = -134 - reach * 4;
-      pose.armBack.handX = 0 + reach * 104;
-      pose.armBack.handY = -134 - reach * 6;
-      // Lead hand pulls back to chin to guard.
-      pose.armFront.handX = 14 - reach * 4; pose.armFront.handY = -148 - reach * 2;
-      pose.armFront.elbowX = 14; pose.armFront.elbowY = -132;
-      pose.torsoAngle = -0.42 * reach;
-      pose.pelvis.x = reach * 8;
-      pose.headOffset.x = -2 + reach * 10;
-      pose.headOffset.y = -152 + reach * 2;
-      // Rear foot pivots: heel rotates up, knee twists IN toward target line.
-      pose.legL.footY -= reach * 14;
-      pose.legL.footX = -20 * bd + reach * 8;
-      pose.legL.kneeX = -14 * bd + reach * 8;
-      pose.legL.kneeY = -42 - reach * 6;
-      // Lead leg straightens & plants firmly to absorb rotation.
+      const chamber = phase === 'startup' ? 1 - easeOut : 0;
+      pose.armBack.elbowX = -6 + reach * 44 - chamber * 10;
+      pose.armBack.elbowY = -126 - reach * 5 + chamber * 6;
+      pose.armBack.handX = -2 + reach * 106 - chamber * 12;
+      pose.armBack.handY = -132 - reach * 7 + chamber * 8;
+      pose.armFront.handX = 17 - reach * 4; pose.armFront.handY = -142 - reach * 3;
+      pose.armFront.elbowX = 14 - reach * 2; pose.armFront.elbowY = -126;
+      pose.torsoAngle = -0.34 * reach;
+      pose.pelvis.x = reach * 7;
+      pose.headOffset.x = -2 + reach * 8;
+      pose.headOffset.y = -152 + reach * 1.5;
+      pose.legL.footY -= reach * 11;
+      pose.legL.footX = -20 * bd + reach * 9;
+      pose.legL.kneeX = -14 * bd + reach * 9;
+      pose.legL.kneeY = -42 - reach * 4;
       pose.legR.footX = 24 * bd + reach * 6;
       pose.legR.kneeY = -42 + reach * 2;
       break;
@@ -1845,38 +1836,38 @@ function applyAttackPose(pose, kind, k, phase, f) {
 }
 
 function drawLeg(ctx, leg, p, bd) {
-  // Pure silhouette leg — solid black thigh + shin + foot. No skin shading,
-  // no ankle tape (would break the silhouette aesthetic).
   const body = p.body || p.skin || '#070707';
+  const joint = shadeColor(body, 0.12);
 
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(0,0,0,0.28)';
+  ctx.shadowBlur = 2;
+  ctx.shadowOffsetY = 1;
   ctx.strokeStyle = body;
 
-  // THIGH
-  ctx.lineWidth = 22 * bd;
+  ctx.lineWidth = 16 * bd;
   ctx.beginPath();
   ctx.moveTo(leg.hipX, leg.hipY);
   ctx.lineTo(leg.kneeX, leg.kneeY);
   ctx.stroke();
 
-  // SHIN — slightly tapered
-  ctx.lineWidth = 16 * bd;
+  ctx.lineWidth = 13 * bd;
   ctx.beginPath();
   ctx.moveTo(leg.kneeX, leg.kneeY);
   ctx.lineTo(leg.footX, leg.footY);
   ctx.stroke();
 
-  // KNEE blend (filled circle to soften the joint)
-  ctx.fillStyle = body;
+  ctx.fillStyle = joint;
   ctx.beginPath();
-  ctx.arc(leg.kneeX, leg.kneeY, 10 * bd, 0, Math.PI * 2);
+  ctx.arc(leg.kneeX, leg.kneeY, 7 * bd, 0, Math.PI * 2);
   ctx.fill();
 
-  // FOOT
+  const footAngle = Math.atan2(leg.footY - leg.kneeY, leg.footX - leg.kneeX) * 0.18;
+  ctx.fillStyle = body;
   ctx.beginPath();
-  ctx.ellipse(leg.footX + 5, leg.footY - 1, 14, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(leg.footX + 6, leg.footY - 1, 14 * bd, 4.5 * bd, footAngle, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -1905,8 +1896,8 @@ function drawTorso(ctx, pose, p, bd, ht, data) {
   // hair + signature glove color, not from torso markings.
   const body = p.body || p.skin || '#070707';
 
-  const shoulderW = 30 * bd;
-  const waistW = 22 * bd;
+  const shoulderW = 21 * bd;
+  const waistW = 15 * bd;
   const neckOffsetY = -72 * ht;
   const shoulderY = -68 * ht;
   const waistY = 0;
@@ -1915,54 +1906,48 @@ function drawTorso(ctx, pose, p, bd, ht, data) {
   ctx.translate(pose.pelvis.x, pose.pelvis.y);
   ctx.rotate(pose.torsoAngle);
 
-  // Single solid silhouette body shape (V-taper from waist to shoulders).
   ctx.fillStyle = body;
   ctx.beginPath();
   ctx.moveTo(-waistW, waistY);
   ctx.bezierCurveTo(
-    -waistW, -14,
-    -shoulderW * 0.95, -34,
+    -waistW * 1.15, -18,
+    -shoulderW * 1.05, -42,
     -shoulderW, shoulderY
   );
-  ctx.lineTo(-shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(-shoulderW * 0.52, neckOffsetY);
   ctx.lineTo(-5, neckOffsetY - 2);
   ctx.lineTo(5, neckOffsetY - 2);
-  ctx.lineTo(shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(shoulderW * 0.52, neckOffsetY);
   ctx.lineTo(shoulderW, shoulderY);
   ctx.bezierCurveTo(
-    shoulderW * 0.95, -34,
-    waistW, -14,
+    shoulderW * 1.05, -42,
+    waistW * 1.15, -18,
     waistW, waistY
   );
   ctx.closePath();
   ctx.fill();
 
-  // Subtle inner shadow on the back-side half so the torso reads as a 3D
-  // shape rather than a flat colored cutout. Body color is now vibrant —
-  // without this it loses dimensional volume.
-  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillStyle = 'rgba(0,0,0,0.10)';
   ctx.beginPath();
   ctx.moveTo(-waistW, waistY);
-  ctx.bezierCurveTo(-waistW, -14, -shoulderW * 0.95, -34, -shoulderW, shoulderY);
-  ctx.lineTo(-shoulderW * 0.7, neckOffsetY);
+  ctx.bezierCurveTo(-waistW * 1.15, -18, -shoulderW * 1.05, -42, -shoulderW, shoulderY);
+  ctx.lineTo(-shoulderW * 0.52, neckOffsetY);
   ctx.lineTo(-2, neckOffsetY - 2);
   ctx.lineTo(-2, waistY);
   ctx.closePath();
   ctx.fill();
 
-  // Thin dark outline around the whole silhouette so it pops against the
-  // dark background.
   ctx.lineWidth = 1.2;
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
   ctx.beginPath();
   ctx.moveTo(-waistW, waistY);
-  ctx.bezierCurveTo(-waistW, -14, -shoulderW * 0.95, -34, -shoulderW, shoulderY);
-  ctx.lineTo(-shoulderW * 0.7, neckOffsetY);
+  ctx.bezierCurveTo(-waistW * 1.15, -18, -shoulderW * 1.05, -42, -shoulderW, shoulderY);
+  ctx.lineTo(-shoulderW * 0.52, neckOffsetY);
   ctx.lineTo(-5, neckOffsetY - 2);
   ctx.lineTo(5, neckOffsetY - 2);
-  ctx.lineTo(shoulderW * 0.7, neckOffsetY);
+  ctx.lineTo(shoulderW * 0.52, neckOffsetY);
   ctx.lineTo(shoulderW, shoulderY);
-  ctx.bezierCurveTo(shoulderW * 0.95, -34, waistW, -14, waistW, waistY);
+  ctx.bezierCurveTo(shoulderW * 1.05, -42, waistW * 1.15, -18, waistW, waistY);
   ctx.closePath();
   ctx.stroke();
 
@@ -2128,9 +2113,6 @@ function _drawTorsoLegacy_unused(ctx, pose, p, bd, ht, data) {
 }
 
 function drawArm(ctx, arm, p, bd, isBack) {
-  // Silhouette arm — solid black upper arm + forearm with a colored glove
-  // (the fighter's signature color) at the hand. Back arm gets a slightly
-  // darker shade so depth is still readable.
   const body = p.body || p.skin || '#070707';
   const armColor = isBack ? shadeColor(body, -0.25) : body;
   const glove = p.gloves || '#ff3a3a';
@@ -2140,107 +2122,66 @@ function drawArm(ctx, arm, p, bd, isBack) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  // SHOULDER cap (blends with torso silhouette)
   ctx.fillStyle = armColor;
   ctx.beginPath();
-  ctx.arc(arm.shoulderX, arm.shoulderY, 11 * bd, 0, Math.PI * 2);
+  ctx.arc(arm.shoulderX, arm.shoulderY, 7 * bd, 0, Math.PI * 2);
   ctx.fill();
 
-  // UPPER ARM
   ctx.strokeStyle = armColor;
-  ctx.lineWidth = 14 * bd;
+  ctx.lineWidth = 10 * bd;
   ctx.beginPath();
   ctx.moveTo(arm.shoulderX, arm.shoulderY);
   ctx.lineTo(arm.elbowX, arm.elbowY);
   ctx.stroke();
 
-  // ELBOW joint
   ctx.fillStyle = armColor;
   ctx.beginPath();
-  ctx.arc(arm.elbowX, arm.elbowY, 7 * bd, 0, Math.PI * 2);
+  ctx.arc(arm.elbowX, arm.elbowY, 5.5 * bd, 0, Math.PI * 2);
   ctx.fill();
 
-  // FOREARM
-  ctx.lineWidth = 11 * bd;
+  ctx.lineWidth = 8.5 * bd;
   ctx.beginPath();
   ctx.moveTo(arm.elbowX, arm.elbowY);
   ctx.lineTo(arm.handX, arm.handY);
   ctx.stroke();
 
-  // GLOVE — fighter's signature color, simple oval boxing-glove shape
   const wristAngle = Math.atan2(arm.handY - arm.elbowY, arm.handX - arm.elbowX);
   ctx.save();
   ctx.translate(arm.handX, arm.handY);
   ctx.rotate(wristAngle);
 
-  // wrist cuff (dark band at the cuff side of the glove)
   ctx.fillStyle = gloveDark;
   ctx.beginPath();
-  ctx.ellipse(-9, 0, 5 * bd, 8 * bd, 0, 0, Math.PI * 2);
+  ctx.ellipse(-6, 0, 3.5 * bd, 6 * bd, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // main glove body
   ctx.fillStyle = glove;
   ctx.beginPath();
-  ctx.ellipse(3, 0, 13 * bd, 11 * bd, 0, 0, Math.PI * 2);
+  ctx.ellipse(3, 0, 10.5 * bd, 9 * bd, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // dark outline so the glove reads against the silhouette
   ctx.strokeStyle = gloveDark;
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 1.3;
   ctx.stroke();
 
-  // thumb knot
   ctx.fillStyle = glove;
   ctx.beginPath();
-  ctx.ellipse(-7, 4, 5 * bd, 4 * bd, 0.4, 0, Math.PI * 2);
+  ctx.ellipse(-5, 3, 4 * bd, 3.3 * bd, 0.4, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = gloveDark;
   ctx.lineWidth = 1.4;
   ctx.stroke();
 
-  // soft shine on top
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
   ctx.beginPath();
-  ctx.ellipse(-1, -5, 6 * bd, 2 * bd, 0, 0, Math.PI * 2);
+  ctx.ellipse(-1, -4, 5 * bd, 1.6 * bd, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
-  ctx.restore();
-}
-
-function drawMuscleHighlights(ctx, pose, p, bd, ht, data) {
-  const accent = p.accent || p.gloves || '#ffffff';
-  const muscle = data && typeof data.muscle === 'number' ? data.muscle : 0.75;
-  const belly = data && typeof data.belly === 'number' ? data.belly : 0;
-  ctx.save();
-  ctx.translate(pose.pelvis.x, pose.pelvis.y);
-  ctx.rotate(pose.torsoAngle);
-  ctx.globalAlpha = 0.32 + muscle * 0.18;
-  ctx.strokeStyle = withAlpha(accent, 0.65);
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.moveTo(-18 * bd, -54 * ht);
-  ctx.quadraticCurveTo(-8 * bd, -62 * ht, 0, -55 * ht);
-  ctx.quadraticCurveTo(8 * bd, -62 * ht, 18 * bd, -54 * ht);
-  ctx.stroke();
-  ctx.globalAlpha = 0.18 + muscle * 0.16;
-  ctx.strokeStyle = 'rgba(255,255,255,0.72)';
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(0, -48 * ht);
-  ctx.lineTo(0, -12 - belly * 3);
-  ctx.moveTo(-10 * bd, -34 * ht);
-  ctx.lineTo(10 * bd, -34 * ht);
-  ctx.moveTo(-8 * bd, -22 * ht);
-  ctx.lineTo(8 * bd, -22 * ht);
-  ctx.stroke();
   ctx.restore();
 }
 
 function drawHead(ctx, pose, p, ht, f) {
-  // Silhouette head — solid black oval, no facial features. The fighter's
-  // identity comes from the HAIR (style + color) drawn on top.
   const body = p.body || p.skin || '#070707';
   const hair = p.hair || '#ffffff';
   const hairShadow = shadeColor(hair, -0.30);
@@ -2260,25 +2201,15 @@ function drawHead(ctx, pose, p, ht, f) {
   ctx.closePath();
   ctx.fill();
 
-  // HEAD silhouette
   ctx.fillStyle = body;
   ctx.beginPath();
-  ctx.ellipse(0, 0, 18, 22 * ht, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 18.5, 21.5 * ht, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Subtle inner shadow on the lower half of the face to give the head a
-  // sense of volume now that the body is rendered in a vibrant color
-  // (without this the head reads as a flat colored disk).
-  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fillStyle = 'rgba(0,0,0,0.08)';
   ctx.beginPath();
-  ctx.ellipse(0, 6, 16, 14 * ht, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 7, 15, 12 * ht, 0, 0, Math.PI * 2);
   ctx.fill();
-
-  // Minimal eye dots — keeps the silhouette aesthetic but lets the head
-  // read as a face. Small, dark, slightly offset toward the facing side.
-  ctx.fillStyle = 'rgba(0,0,0,0.85)';
-  ctx.beginPath(); ctx.arc(-4, -2, 1.6, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(4, -2, 1.6, 0, Math.PI * 2); ctx.fill();
 
   // === HAIR (per-fighter unique style + color) ============================
   ctx.fillStyle = hair;
@@ -2838,7 +2769,6 @@ function drawFighterStandalone(ctx, fs, fighter) {
   ctx.restore();
   drawArm(ctx, pose.armBack, p, bd, true);
   drawTorso(ctx, pose, p, bd, ht, fighter);
-  drawMuscleHighlights(ctx, pose, p, bd, ht, fighter);
   drawHead(ctx, pose, p, ht, fs);
   drawArm(ctx, pose.armFront, p, bd, false);
   ctx.restore();
