@@ -788,55 +788,60 @@ function computePose(f, t) {
     pose.armFront.shoulderY += breath * 0.3;
   }
   if (f.state === 'walk') {
-    // Realistic gait: counter-rotated hips & shoulders, heel-to-toe foot lift,
-    // pronounced arm swing in counter-phase to the legs, head bob with stride.
     const dir = typeof f.movingDirection === 'number' ? f.movingDirection : 1;
     const retreat = dir < 0;
-    const strideFreq = 0.40 * cadence * (retreat ? 0.76 : 1.0);
-    const strideMag = (retreat ? 0.72 : 1.08) + stepBurst * 0.26;
-    const stride = Math.sin(t * strideFreq) * strideMag;          // -1..1
+    const motion = retreat ? -1 : 1;
+    const strideFreq = 0.44 * cadence * (retreat ? 0.82 : 1.0);
+    const phase = t * strideFreq;
+    const strideMag = (retreat ? 0.78 : 1.12) + stepBurst * 0.24;
+    const stride = Math.sin(phase) * strideMag;
+    const strideOpp = Math.sin(phase + Math.PI) * strideMag;
     const strideAbs = Math.abs(stride);
-    const liftR = Math.max(0, stride);   // R leg lifts on positive phase
-    const liftL = Math.max(0, -stride);  // L leg lifts on negative phase
+    const liftR = Math.max(0, Math.sin(phase));
+    const liftL = Math.max(0, Math.sin(phase + Math.PI));
+    const plantR = 1 - liftR;
+    const plantL = 1 - liftL;
+    const reach = (retreat ? 16 : 30) * bd;
+    const stepLift = (retreat ? 15 : 22) + stepBurst * 8;
+    const weightShift = Math.cos(phase) * (retreat ? 3.2 : 4.8);
+    const plantPulse = Math.pow(Math.abs(Math.cos(phase)), 0.6);
 
-    // FEET — lifted leg pulls forward + up, planted leg pushes back + grips ground.
-    // The foot rolls heel-to-toe so on lift the foot tilts forward (footY goes up).
-    pose.legR.footX = 24 * bd + stride * (retreat ? 12 : 26) + momentum * 5;
-    pose.legR.footY = -liftR * (24 + stepBurst * 10) * bobAmp;
-    pose.legR.kneeX = 16 * bd + stride * 12 + momentum * 4;
-    pose.legR.kneeY = -42 - liftR * (24 + stepBurst * 8) * bobAmp;
-    pose.legL.footX = -20 * bd + stride * (retreat ? 12 : 26) + momentum * 4;
-    pose.legL.footY = -liftL * (24 + stepBurst * 10) * bobAmp;
-    pose.legL.kneeX = -14 * bd + stride * 12 + momentum * 3;
-    pose.legL.kneeY = -42 - liftL * (24 + stepBurst * 8) * bobAmp;
-    // Hips raise on each plant, dip mid-step — classic walking sine
-    pose.pelvis.y = -82 + strideAbs * 4 * bobAmp - 3;
-    pose.pelvis.x = stride * (retreat ? 1 : 3);
+    pose.legR.footX = 24 * bd + motion * stride * reach + momentum * 4 + weightShift * 0.35;
+    pose.legR.footY = -liftR * stepLift * bobAmp;
+    pose.legR.kneeX = 16 * bd + motion * stride * 13 * bd + momentum * 3 + weightShift * 0.45;
+    pose.legR.kneeY = -42 - liftR * (21 + stepBurst * 7) * bobAmp + plantR * 4;
+    pose.legR.footTilt = motion * (0.18 + liftR * 0.38 - plantR * 0.10);
 
-    // TORSO COUNTER-ROTATION — shoulders rotate OPPOSITE to hips for proper gait.
-    // (When R foot is forward, R hip is forward, but R shoulder is BACK.)
+    pose.legL.footX = -22 * bd + motion * strideOpp * (reach * 0.88) + momentum * 3 - weightShift * 0.35;
+    pose.legL.footY = -liftL * stepLift * bobAmp;
+    pose.legL.kneeX = -16 * bd + motion * strideOpp * 12 * bd + momentum * 2 - weightShift * 0.45;
+    pose.legL.kneeY = -42 - liftL * (21 + stepBurst * 7) * bobAmp + plantL * 4;
+    pose.legL.footTilt = motion * (0.18 + liftL * 0.38 - plantL * 0.10);
+
+    pose.pelvis.y = -83 - plantPulse * 3.4 * bobAmp + strideAbs * 1.7;
+    pose.pelvis.x = motion * stride * (retreat ? 2.4 : 4.2) + weightShift * 0.22;
+
     const lean = (1 - bobAmp) * 0.10 + (retreat ? -0.04 : 0.03);
-    pose.torsoAngle = -stride * 0.14 + lean + momentum * 0.055;
+    pose.torsoAngle = -motion * stride * 0.13 + lean + momentum * 0.05 + weightShift * 0.004;
 
     if (retreat) {
-      pose.armFront.handX = 24 * bd - stride * 8 + momentum * 4; pose.armFront.handY = -132 - stepBurst * 4;
-      pose.armFront.elbowX = 22 * bd - stride * 4; pose.armFront.elbowY = -116 + strideAbs * 2;
-      pose.armBack.handX = 4 * bd + stride * 6 + momentum * 3;  pose.armBack.handY = -142 - stepBurst * 3;
-      pose.armBack.elbowX = -10 * bd + stride * 4; pose.armBack.elbowY = -120 + strideAbs * 2;
+      pose.armFront.handX = 25 * bd - stride * 7 + momentum * 4; pose.armFront.handY = -134 - stepBurst * 4 + strideAbs * 2;
+      pose.armFront.elbowX = 22 * bd - stride * 4 + weightShift * 0.2; pose.armFront.elbowY = -117 + strideAbs * 2;
+      pose.armBack.handX = 2 * bd + stride * 7 + momentum * 3;  pose.armBack.handY = -143 - stepBurst * 3 + strideAbs * 1.5;
+      pose.armBack.elbowX = -11 * bd + stride * 4 - weightShift * 0.15; pose.armBack.elbowY = -120 + strideAbs * 2;
     } else {
-      pose.armFront.handX = 26 * bd - stride * 10 + momentum * 4;
-      pose.armFront.handY = -130 + strideAbs * 3 - stepBurst * 5;
-      pose.armFront.elbowX = 22 * bd - stride * 7;
+      pose.armFront.handX = 27 * bd - stride * 12 + momentum * 4 + weightShift * 0.2;
+      pose.armFront.handY = -131 + strideAbs * 3 - stepBurst * 5;
+      pose.armFront.elbowX = 23 * bd - stride * 7;
       pose.armFront.elbowY = -114 + strideAbs * 2;
-      pose.armBack.handX = 2 * bd + stride * 8 + momentum * 3;
-      pose.armBack.handY = -142 + strideAbs * 2 - stepBurst * 4;
-      pose.armBack.elbowX = -10 * bd + stride * 5;
+      pose.armBack.handX = 0 * bd + stride * 10 + momentum * 3 - weightShift * 0.2;
+      pose.armBack.handY = -144 + strideAbs * 2 - stepBurst * 4;
+      pose.armBack.elbowX = -11 * bd + stride * 5;
       pose.armBack.elbowY = -120 + strideAbs * 2;
     }
 
-    // HEAD — bobs vertically with stride, sways laterally with shoulder rotation
-    pose.headOffset.x = -2 + stride * 3.6 + momentum * 2.2;
-    pose.headOffset.y = -152 * ht + strideAbs * 3 * bobAmp - 2;
+    pose.headOffset.x = -2 + motion * stride * 3.4 + momentum * 2.1 + weightShift * 0.18;
+    pose.headOffset.y = -152 * ht - plantPulse * 2.3 * bobAmp + strideAbs * 1.6;
   }
   if (f.state === 'crouch') {
     pose.pelvis.y = -52;
@@ -1919,7 +1924,9 @@ function drawLeg(ctx, leg, p, bd) {
   ctx.arc(leg.kneeX, leg.kneeY, 7 * bd, 0, Math.PI * 2);
   ctx.fill();
 
-  const footAngle = Math.atan2(leg.footY - leg.kneeY, leg.footX - leg.kneeX) * 0.18;
+  const footAngle = typeof leg.footTilt === 'number'
+    ? leg.footTilt
+    : Math.atan2(leg.footY - leg.kneeY, leg.footX - leg.kneeX) * 0.18;
   ctx.fillStyle = body;
   ctx.beginPath();
   ctx.ellipse(leg.footX + 6, leg.footY - 1, 14 * bd, 4.5 * bd, footAngle, 0, Math.PI * 2);
