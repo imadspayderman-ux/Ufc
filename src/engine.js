@@ -116,6 +116,17 @@ export class FighterState {
     this.dodgeIFrames = 0;
     this.downTime = 0;
     this.getupTime = 0;
+    // True knockdown (HP <= 0). Skips the get-up phase: the round is over.
+    // For non-fatal knockdowns we set state='down' but isKO=false so the
+    // fighter can mash ESCAPE to get up before downTime expires.
+    this.isKO = false;
+    // Per-frame mash credit while in 'down' (recoverable). Each ESCAPE press
+    // adds to it; when it crosses 100 the fighter pops up immediately.
+    this.getupMash = 0;
+    // Lightweight stand-up recovery animation phase used when transitioning
+    // out of a non-fatal knockdown back to 'idle'.
+    this.getupAnimFrame = 0;
+    this.getupAnimTotal = 0;
     this.cooldown = 0;          // generic post-action lockout
 
     this.crouching = false;
@@ -359,6 +370,7 @@ export class FighterState {
 
     if (this.hp <= 0) {
       this.state = 'down';
+      this.isKO = true;
       this.downTime = 90;
       this.vy = -8;
       this.vx = dir * 8;
@@ -370,7 +382,28 @@ export class FighterState {
       // for the attacker to capitalise (UFC 5 "flash KO" feel).
       const lowHp = this.hp <= this.maxHp * 0.30;
       const heavyClean = !blocked && (actualDmg >= 16 || (actualDmg >= 11 && lowHp));
-      if (heavyClean) {
+      // Flash-knockdown: a brutal clean head shot (kick / uppercut / cross) on
+      // a wobbled or low-HP target sends them to the canvas without ending
+      // the round. They can mash ESCAPE to pop back up early.
+      const headShot = !blocked && attack && (attack.height === 'head' || attack.height === 'high');
+      const flashKD = !blocked && headShot && (
+        actualDmg >= 22 ||
+        (actualDmg >= 14 && (this.wobbleFrames > 0 || lowHp))
+      );
+      if (flashKD) {
+        this.state = 'down';
+        this.isKO = false;
+        this.downTime = 110;        // ~1.8s window to recover
+        this.getupMash = 0;
+        this.vy = -7;
+        this.vx = dir * 6;
+        this.wobbleFrames = 0;
+        this.wobbleHelpless = 0;
+        this.stunFrames = 0;
+        this.blocking = false;
+        this.crouching = false;
+        this.attack = null; this.attackFrame = 0;
+      } else if (heavyClean) {
         this.wobbleFrames = 50;
         this.wobbleHelpless = 24;
         this.state = 'wobble';
@@ -407,6 +440,12 @@ export class FighterState {
   // Hurtbox depending on state
   hurtbox() {
     if (this.state === 'down') return null;
+    // Partial i-frames while popping back up — the ref / opponent gets
+    // pushed back during the ~half-second get-up so the player isn't
+    // immediately re-knockdown'd. After the first half of the animation
+    // the standard hurtbox returns so the opponent can capitalise if the
+    // get-up was sloppy.
+    if (this.state === 'getup' && this.getupAnimFrame < (this.getupAnimTotal * 0.55)) return null;
     let topY = this.y - 180;
     let halfW = 36;
     let halfH = 90;
@@ -486,8 +525,10 @@ export class Match {
     this.p2.stamina = this.p2.maxStamina;
     this.p1.x = 380; this.p1.y = ARENA.groundY; this.p1.vx = 0; this.p1.vy = 0;
     this.p1.state = 'idle'; this.p1.facing = 1; this.p1.attack = null; this.p1.attackFrame = 0; this.p1.stunFrames = 0;
+    this.p1.isKO = false; this.p1.downTime = 0; this.p1.getupMash = 0; this.p1.getupAnimFrame = 0; this.p1.getupAnimTotal = 0;
     this.p2.x = 900; this.p2.y = ARENA.groundY; this.p2.vx = 0; this.p2.vy = 0;
     this.p2.state = 'idle'; this.p2.facing = -1; this.p2.attack = null; this.p2.attackFrame = 0; this.p2.stunFrames = 0;
+    this.p2.isKO = false; this.p2.downTime = 0; this.p2.getupMash = 0; this.p2.getupAnimFrame = 0; this.p2.getupAnimTotal = 0;
     this.timer = 60;
     this.state = 'intro';
     // Rounds 2+: short countdown-only intro.
@@ -1111,6 +1152,128 @@ export class Match {
     return false;
   }
 
+  // Dedicated ESCAPE-button burst. Equivalent to a perfectly-timed tap with
+  // a heavier escape payload, but capped per-window so it can't trivialise
+  // the submission minigame. Uses extra stamina to compensate.
+  submissionBurst(defender) {
+    const g = this.grapple;
+    if (!g || !g.submission) return false;
+    if (g.submission.defender !== defender) return false;
+    if (g.submission.lockIn) return false;
+    if (defender.stamina < 4) return false;
+    const frame = this.tick || 0;
+    // Throttle: at most one burst every ~14 frames so spamming the button
+    // doesn't auto-escape — it still has to be paced.
+    if (frame - (defender.lastBurstFrame || -999) < 14) return false;
+    defender.lastBurstFrame = frame;
+    defender.stamina = Math.max(0, defender.stamina - 3);
+    defender.escapePulse = 1.6;
+    const s = g.submission;
+    const skillBoost = defender.submissionMul();
+    const staminaScale = 0.5 + 0.5 * _staminaRatio(defender);
+    // ~2.4x a perfectly-timed tap.
+    const gain = s.escapeGain * skillBoost * staminaScale * 2.4;
+    s.escape = Math.min(100, s.escape + gain);
+    s.progress = Math.max(0, s.progress - s.escapeGain * 0.8);
+    if (s.escape >= 100) {
+      const att = s.attacker, def = s.defender;
+      att.state = 'ground_top'; def.state = 'ground_bottom';
+      if (g.position === 'back_mount' || g.position === 'mount') {
+        g.position = 'guard';
+        att.groundPosition = 'guard'; def.groundPosition = 'guard';
+      }
+      if (g.position === 'front_headlock') {
+        g.submission = null;
+        att.subLockKind = null; def.subLockKind = null;
+        att.subProgress = 0; def.subProgress = 0;
+        this.pushEvent('submission_escape', { defender: defender.side });
+        SFX.block();
+        this._endFrontHeadlock('escape');
+        return true;
+      }
+      g.submission = null;
+      att.subLockKind = null; def.subLockKind = null;
+      att.subProgress = 0; def.subProgress = 0;
+      this.pushEvent('submission_escape', { defender: defender.side });
+      SFX.block();
+      return true;
+    }
+    return false;
+  }
+
+  // Defender mashes ESCAPE during the takedown. Each press fills a sprawl
+  // meter; if it crosses 100 *before* the slam phase ends, the takedown is
+  // interrupted: the defender pops free and the attacker faceplants in a
+  // sprawl. Costs stamina; ineffective once the slam is locked in.
+  takedownEscape(defender) {
+    const g = this.grapple;
+    if (!g || !g.takedownAnim) return false;
+    if (g.bottom !== defender) return false;
+    const ta = g.takedownAnim;
+    // Once the slam frame has fired, the takedown is committed.
+    if (ta.frame >= ta.driveEnd + 4) return false;
+    if (defender.stamina < 2) return false;
+    defender.stamina = Math.max(0, defender.stamina - 1.5);
+    const skill = defender.takedownDefMul() + defender.specialty.groundAffinity * 0.2;
+    // ~5 presses for an unskilled fighter, ~3 for a strong wrestler.
+    const push = 18 + skill * 6;
+    ta.sprawlMeter = Math.min(100, (ta.sprawlMeter || 0) + push);
+    defender.escapePulse = 1.2;
+    this.pushEvent('takedown_struggle', { defender: defender.side, meter: ta.sprawlMeter });
+    if (ta.sprawlMeter >= 100) {
+      // Sprawl out — defender stuffs the shot, attacker faceplants briefly.
+      const att = g.top, def = g.bottom;
+      this.grapple = null;
+      if (att) {
+        att.state = 'sprawl';
+        att.takedownFrame = 0; att.takedownPhase = null;
+        att.grappleRole = null;
+        att.cooldown = 28;
+        att.stamina = Math.max(0, att.stamina - 6);
+      }
+      if (def) {
+        def.state = 'idle';
+        def.takedownFrame = 0; def.takedownPhase = null;
+        def.grappleRole = null;
+        // Brief recovery so the defender doesn't immediately re-engage.
+        def.cooldown = 12;
+      }
+      this.pushEvent('takedown_stuffed', { defender: defender.side });
+      SFX.block();
+      return true;
+    }
+    return false;
+  }
+
+  // Mash-to-get-up while in a non-fatal knockdown. Each call adds to a
+  // get-up meter; on completion the fighter pops to one knee and into the
+  // get-up animation. Auto get-up still fires when downTime expires.
+  getupBurst(f) {
+    if (f.state !== 'down') return false;
+    if (f.isKO) return false;
+    if (f.stamina < 1) return false;
+    f.stamina = Math.max(0, f.stamina - 0.6);
+    f.getupMash = Math.min(120, (f.getupMash || 0) + 22);
+    if (f.getupMash >= 100) {
+      this._beginGetup(f);
+      return true;
+    }
+    return false;
+  }
+
+  _beginGetup(f) {
+    f.state = 'getup';
+    f.getupAnimFrame = 0;
+    f.getupAnimTotal = 26;       // ~0.43s pop-up animation
+    f.downTime = 0;
+    f.getupMash = 0;
+    f.vx = 0; f.vy = 0;
+    f.attack = null; f.attackFrame = 0;
+    f.stunFrames = 0;
+    f.blocking = false;
+    this.pushEvent('getup', { who: f.side });
+  }
+
   _updateGrapple() {
     const g = this.grapple;
     if (!g) return;
@@ -1240,6 +1403,7 @@ export class Match {
         // Tap / finish.
         def.hp = 0;
         def.state = 'down';
+        def.isKO = true;
         def.downTime = 90;
         att.subLockKind = null; def.subLockKind = null;
         att.subProgress = 100; def.subProgress = 100;
@@ -1335,7 +1499,7 @@ export class Match {
       attacker.hitConfirm = true;
       if (a.damage >= 8) SFX.hitHard(); else SFX.hit();
       if (defender.hp <= 0) {
-        defender.state = 'down'; defender.downTime = 90; defender.vy = -6; defender.vx = 6 * (attacker.x < defender.x ? 1 : -1);
+        defender.state = 'down'; defender.isKO = true; defender.downTime = 90; defender.vy = -6; defender.vx = 6 * (attacker.x < defender.x ? 1 : -1);
         SFX.ko();
         if (this.grapple) this._endClinch('ko', defender);
         return;
@@ -1384,7 +1548,7 @@ export class Match {
       attacker.hitConfirm = true;
       SFX.hit();
       if (defender.hp <= 0) {
-        defender.state = 'down'; defender.downTime = 90;
+        defender.state = 'down'; defender.isKO = true; defender.downTime = 90;
         SFX.ko();
         this._endGround('ko', defender);
         return;
@@ -1546,6 +1710,23 @@ export class Match {
 
     if (f.state === 'down') {
       if (f.downTime > 0) f.downTime--;
+      // Recoverable knockdown: when the down timer elapses (or the get-up
+      // mash maxes out), play a brief get-up animation and return to idle.
+      if (!f.isKO) {
+        // Mash gauge bleeds slowly so spamming over time still pays off but
+        // a single tap doesn't carry forever.
+        f.getupMash = Math.max(0, (f.getupMash || 0) - 0.6);
+        if (f.downTime <= 0) this._beginGetup(f);
+      }
+    }
+    if (f.state === 'getup') {
+      f.getupAnimFrame++;
+      if (f.getupAnimFrame >= f.getupAnimTotal) {
+        f.state = 'idle';
+        f.getupAnimFrame = 0;
+        f.getupAnimTotal = 0;
+        f.cooldown = Math.max(f.cooldown, 6);
+      }
     }
 
     // Sprawl recovery (failed TD defense from attacker side).

@@ -25,6 +25,7 @@ const KEY_MAP = {
   KeyF: 'submit',      // attempt submission (context-sensitive)
   KeyE: 'tap_escape',  // (defender) tap to escape submission
   KeyR: 'advance',     // (top) advance ground position
+  KeyQ: 'escape',      // panic-escape: sub / clinch / ground / takedown / get up
   // System
   KeyP: 'pause', Escape: 'pause',
   Enter: 'enter',

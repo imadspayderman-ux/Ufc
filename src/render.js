@@ -556,6 +556,10 @@ export class Renderer {
     if (match.grapple) {
       drawGrappleHUD(ctx, match);
     }
+    // Recoverable knockdown overlay — show a "GET UP!" prompt with a mash
+    // gauge above the fighter who's down (non-fatal).
+    drawKnockdownPrompt(ctx, match.p1, match);
+    drawKnockdownPrompt(ctx, match.p2, match);
   }
 
   // Draw wrapping arms / submission locks between grapple participants.
@@ -669,6 +673,23 @@ function drawGrappleHUD(ctx, match) {
   const x = ARENA.width / 2;
   ctx.strokeText(label, x, 130);
   ctx.fillText(label, x, 130);
+  // Takedown SPRAWL meter — shown to the defender during the shoot/drive
+  // phase. Filling it before the slam locks in stuffs the takedown.
+  if (g.takedownAnim && g.takedownAnim.frame < g.takedownAnim.driveEnd + 4) {
+    const ta = g.takedownAnim;
+    const bw = 240, bh = 12;
+    const bx = x - bw / 2, by = 142;
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+    ctx.fillStyle = '#0a0e22';
+    ctx.fillRect(bx, by, bw, bh);
+    const frac = Math.max(0, Math.min(1, (ta.sprawlMeter || 0) / 100));
+    ctx.fillStyle = frac > 0.7 ? '#5cd28a' : frac > 0.4 ? '#9bdf68' : '#3aa86a';
+    ctx.fillRect(bx, by, bw * frac, bh);
+    ctx.fillStyle = '#cfffd9';
+    ctx.font = 'bold 11px system-ui';
+    ctx.fillText('MASH ESCAPE TO SPRAWL (Q)', x, by - 4);
+  }
   // Scramble gauge — only useful while a submission isn't running.
   // Shows the bottom fighter's progress toward escaping the position.
   if (!g.submission && typeof g.scramble === 'number') {
@@ -714,7 +735,7 @@ function drawGrappleHUD(ctx, match) {
     ctx.fillRect(bx, by + bh + 4, bw * epct, 8);
     ctx.fillStyle = '#88ccff';
     ctx.font = 'bold 10px system-ui';
-    ctx.fillText('TAP TO ESCAPE', x, by + bh + 22);
+    ctx.fillText('TAP TO ESCAPE  •  ESCAPE = burst-tap (Q)', x, by + bh + 22);
     // Attacker stamina sliver \u2014 if it empties, the sub auto-releases.
     const sa = s.attacker;
     const staminaFrac = sa && sa.maxStamina > 0 ? sa.stamina / sa.maxStamina : 0;
@@ -735,6 +756,40 @@ function drawGrappleHUD(ctx, match) {
       ctx.fillText('SUBMISSION OPENING', x, 168);
     }
   }
+  ctx.restore();
+}
+
+function drawKnockdownPrompt(ctx, f, match) {
+  if (!f || f.state !== 'down' || f.isKO) return;
+  const x = f.x;
+  const y = f.y - 200;
+  // Pulsing prompt that fades as time runs out.
+  const t = match && match.tick ? match.tick : 0;
+  const pulse = 0.65 + Math.abs(Math.sin(t * 0.22)) * 0.35;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 22px Impact, system-ui';
+  ctx.fillStyle = `rgba(255,222,90,${pulse})`;
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.lineWidth = 4;
+  ctx.strokeText('GET UP!  Q / E / J', x, y);
+  ctx.fillText('GET UP!  Q / E / J', x, y);
+  // Mash meter
+  const bw = 140, bh = 10;
+  const bx = x - bw / 2, by = y + 8;
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+  ctx.fillStyle = '#1a1408';
+  ctx.fillRect(bx, by, bw, bh);
+  const frac = Math.max(0, Math.min(1, (f.getupMash || 0) / 100));
+  ctx.fillStyle = frac > 0.7 ? '#ffe066' : frac > 0.4 ? '#ffb84a' : '#ff8a3a';
+  ctx.fillRect(bx, by, bw * frac, bh);
+  // Down-time countdown beneath the bar — gives the player a sense of how
+  // much time they have to react before the auto get-up triggers.
+  const downSecs = Math.max(0, Math.ceil((f.downTime || 0) / 60));
+  ctx.font = 'bold 10px system-ui';
+  ctx.fillStyle = '#ffd9a0';
+  ctx.fillText(`AUTO IN ${downSecs}s`, x, by + bh + 12);
   ctx.restore();
 }
 
@@ -932,13 +987,81 @@ function computePose(f, t) {
     pose.legR.kneeY = -42 + 4 * k;
   }
   if (f.state === 'down') {
-    // Lying flat
-    pose.pelvis.x = 30; pose.pelvis.y = -10;
-    pose.headOffset.x = -40; pose.headOffset.y = -25;
-    pose.legL.hipX = 30; pose.legL.hipY = -8; pose.legL.kneeX = 60; pose.legL.kneeY = -10; pose.legL.footX = 90; pose.legL.footY = -4;
-    pose.legR.hipX = 30; pose.legR.hipY = -10; pose.legR.kneeX = 60; pose.legR.kneeY = -16; pose.legR.footX = 90; pose.legR.footY = -10;
-    pose.armBack.shoulderX = 10; pose.armBack.shoulderY = -22; pose.armBack.elbowX = -16; pose.armBack.elbowY = -16; pose.armBack.handX = -38; pose.armBack.handY = -10;
-    pose.armFront.shoulderX = 12; pose.armFront.shoulderY = -28; pose.armFront.elbowX = -10; pose.armFront.elbowY = -22; pose.armFront.handX = -32; pose.armFront.handY = -16;
+    // Sprawled flat on the canvas. The body lies along the +X axis (away
+    // from where the strike came from) with the head furthest from feet.
+    // For a non-fatal knockdown we add subtle dazed motion so the fighter
+    // visibly twitches / tries to push up; KO'd fighters lie still.
+    const ko = !!f.isKO;
+    const daze = ko ? 0 : (Math.sin(t * 0.18) * 0.5 + 0.5);   // 0..1 woozy pulse
+    const liftBack = ko ? 0 : Math.max(0, Math.min(1, ((f.getupMash || 0) / 100))); // arches up as mash builds
+    // Lay torso along the ground: pelvis low, head reaches forward and to
+    // the side (turned), shoulders flattened.
+    pose.pelvis.x = 18;
+    pose.pelvis.y = -16 + 4 * (1 - daze);
+    pose.torsoAngle = 0.18 - 0.10 * liftBack;
+    pose.headOffset.x = -56 + 2 * daze;
+    pose.headOffset.y = -28 + 4 * (1 - daze) - 4 * liftBack;
+    // Splayed legs — knees gently bent, feet relaxed outward. One leg
+    // trails slightly higher to suggest the fighter rolled on impact.
+    pose.legL.hipX = 12;  pose.legL.hipY = -22; pose.legL.kneeX = 40;  pose.legL.kneeY = -22; pose.legL.footX = 78;  pose.legL.footY = -16;
+    pose.legR.hipX = 12;  pose.legR.hipY = -10; pose.legR.kneeX = 44;  pose.legR.kneeY = -8;  pose.legR.footX = 86;  pose.legR.footY = -2;
+    if (!ko) {
+      // Twitchy leg as the fighter tries to plant a foot.
+      pose.legR.kneeY -= 4 * daze;
+      pose.legR.footX -= 6 * daze;
+    }
+    // Arms outstretched / above the head — one hand reaches back to push
+    // off the mat, the other lies palm-down. Builds up as mash progresses.
+    pose.armBack.shoulderX = -4;  pose.armBack.shoulderY = -34;
+    pose.armBack.elbowX = -34;    pose.armBack.elbowY = -28 - 6 * liftBack;
+    pose.armBack.handX = -64;     pose.armBack.handY = -22 - 8 * liftBack;
+    pose.armFront.shoulderX = 2;  pose.armFront.shoulderY = -28;
+    pose.armFront.elbowX = -28;   pose.armFront.elbowY = -22 - 4 * liftBack;
+    pose.armFront.handX = -54 + 6 * daze;
+    pose.armFront.handY = -16 - 4 * liftBack;
+  }
+  if (f.state === 'getup') {
+    // Three-phase pop-up: (a) push from prone to one knee, (b) plant
+    // lead foot, (c) rise to neutral stance. We blend out of the down
+    // pose so the transition reads as one continuous motion.
+    const total = f.getupAnimTotal || 26;
+    const k = Math.max(0, Math.min(1, (f.getupAnimFrame || 0) / total));
+    // Phase weights — ease-out so the rise feels heavy at first.
+    const phaseA = Math.min(1, k / 0.40);            // 0..1 over first 40%
+    const phaseB = Math.max(0, Math.min(1, (k - 0.40) / 0.30)); // 40..70%
+    const phaseC = Math.max(0, Math.min(1, (k - 0.70) / 0.30)); // 70..100%
+    const ease = (x) => x * x * (3 - 2 * x);
+    const a = ease(phaseA), b = ease(phaseB), c = ease(phaseC);
+    // Pelvis climbs from ground (y = -16) up to standing (-82).
+    const pelvisY = -16 + (-30 - (-16)) * a + (-58 - (-30)) * b + (-82 - (-58)) * c;
+    pose.pelvis.x = 14 - 14 * (a + b + c) / 3;
+    pose.pelvis.y = pelvisY;
+    pose.torsoAngle = 0.50 - 0.50 * (a * 0.4 + b * 0.4 + c);
+    pose.headOffset.x = -36 + 36 * (a * 0.3 + b * 0.4 + c * 0.3);
+    pose.headOffset.y = -36 + (-152 - (-36)) * ((a + b + c) / 3);
+    // Lead leg posts (hand-down → knee-up → standing).
+    const leadKneeY = -22 + (-46 - (-22)) * a + (-46 - (-46)) * b + (-42 - (-46)) * c;
+    pose.legR.hipX = 8 + 4 * c;  pose.legR.hipY = -22 + (-78 - (-22)) * ((a + b + c) / 3);
+    pose.legR.kneeX = 18 * bd;   pose.legR.kneeY = leadKneeY;
+    pose.legR.footX = 26 * bd;   pose.legR.footY = 0;
+    // Back leg drives up from sprawl to standing.
+    pose.legL.hipX = -4 - 6 * c; pose.legL.hipY = -22 + (-78 - (-22)) * ((a + b + c) / 3);
+    pose.legL.kneeX = -16 * bd;  pose.legL.kneeY = -22 + (-42 - (-22)) * ((a + b + c) / 3);
+    pose.legL.footX = -22 * bd;  pose.legL.footY = 0;
+    // Hands push off the mat then return to a relaxed guard.
+    const armReach = 1 - c;
+    pose.armBack.shoulderX = -shoulderEdgeX + 6 * armReach;
+    pose.armBack.shoulderY = -34 + (shoulderWorldY - (-34)) * ((a + b + c) / 3);
+    pose.armBack.elbowX = -22 * bd + 8 * armReach;
+    pose.armBack.elbowY = -28 + (-114 - (-28)) * ((a + b + c) / 3);
+    pose.armBack.handX = -32 * bd + 18 * armReach;
+    pose.armBack.handY = -22 + (-76 - (-22)) * ((a + b + c) / 3);
+    pose.armFront.shoulderX = shoulderEdgeX - 4 * armReach;
+    pose.armFront.shoulderY = -28 + (shoulderWorldY - (-28)) * ((a + b + c) / 3);
+    pose.armFront.elbowX = 22 * bd - 6 * armReach;
+    pose.armFront.elbowY = -22 + (-114 - (-22)) * ((a + b + c) / 3);
+    pose.armFront.handX = 16 * bd;
+    pose.armFront.handY = -16 + (-76 - (-16)) * ((a + b + c) / 3);
   }
   if (f.state === 'takedown_shoot') {
     // Attacker: shoot in low (level change) → drive forward (lift) → slam.

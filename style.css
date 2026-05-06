@@ -354,6 +354,8 @@ h3 { font-size: 22px; letter-spacing: 2px; }
 .tc-btn.brk,
 .tc-btn.tap,
 .tc-btn.adv   { background: linear-gradient(180deg, #5a3a8a 0%, #2a1a48 100%); border-color: #8060c0; color: #e0d0ff; }
+.tc-btn.escape  { background: linear-gradient(180deg, #2aa45a 0%, #0e4828 100%); border-color: #5cd28a; color: #f0fff5; }
+.tc-btn.escape:hover { background: linear-gradient(180deg, #36c46e 0%, #135a32 100%); }
 .tc-btn.special { background: linear-gradient(180deg, #ffcc33 0%, #aa7a10 100%); border-color: #ffe580; color: #1a1208; text-shadow: none; }
 
 /* Mobile / narrow-screen: bigger, touch-friendly buttons. */

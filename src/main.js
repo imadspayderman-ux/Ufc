@@ -211,13 +211,28 @@ function togglePause(forceState) {
 function applyP1Input(match) {
   const p = match.p1;
   const opp = match.p2;
-  if (p.state === 'down' || p.state === 'ko' || p.state === 'hit') return;
 
   // Pause (always)
   if (Input.consumePressed('pause')) togglePause();
 
+  // Recoverable knockdown — mash ESCAPE / jab / any direction to pop back up
+  // before downTime expires. A KO is final; only the round transition exits.
+  if (p.state === 'down') {
+    if (!p.isKO) {
+      if (Input.consumePressed('escape') || Input.consumePressed('tap_escape') ||
+          Input.consumePressed('jab') || Input.consumePressed('cross') ||
+          Input.consumePressed('up') || Input.consumePressed('break')) {
+        match.getupBurst(p);
+      }
+    }
+    return;
+  }
+  if (p.state === 'ko' || p.state === 'hit' || p.state === 'getup') return;
+
   // Context: grappling states — different keymap
   if (p.state === 'sub_defense') {
+    // ESCAPE button: powered burst (counts as ~2.4 perfectly-timed taps)
+    if (Input.consumePressed('escape')) { match.submissionBurst(p); return; }
     // Mash any key to escape (E or jab/cross/up/down for accessibility)
     if (Input.consumePressed('tap_escape') || Input.consumePressed('jab') ||
         Input.consumePressed('cross') || Input.consumePressed('up') ||
@@ -231,8 +246,16 @@ function applyP1Input(match) {
     // nothing the attacker can input — sub resolves on its own
     return;
   }
+  // Mash ESCAPE during a takedown shot to sprawl out and stuff it.
+  if (p.state === 'takedown_defend') {
+    if (Input.consumePressed('escape') || Input.consumePressed('tap_escape') ||
+        Input.consumePressed('break') || Input.consumePressed('up')) {
+      match.takedownEscape(p);
+    }
+    return;
+  }
   if (p.state === 'clinch') {
-    if (Input.consumePressed('break')) { match.tryBreakClinch(p); return; }
+    if (Input.consumePressed('escape') || Input.consumePressed('break')) { match.tryBreakClinch(p); return; }
     if (Input.consumePressed('block') || Input.consumePressed('tap_escape')) {
       p.clinchGuardFrames = 18;
       p.stamina = Math.max(0, p.stamina - 2);
@@ -252,7 +275,7 @@ function applyP1Input(match) {
   }
   if (p.state === 'ground_top') {
     // Top voluntarily disengages — tryStandUp is bottom-only, so end the ground engagement directly.
-    if (Input.consumePressed('break')) { match._endGround('standup'); return; }
+    if (Input.consumePressed('escape') || Input.consumePressed('break')) { match._endGround('standup'); return; }
     if (Input.consumePressed('advance')) { match.tryPositionAdvance(p); return; }
     if (Input.consumePressed('submit')) {
       const g = match.grapple;
@@ -283,6 +306,13 @@ function applyP1Input(match) {
       p.stamina = Math.max(0, p.stamina - 2);
       return;
     }
+    // ESCAPE = boosted stand-up attempt (each press counts as ~1.6 normal mashes).
+    if (Input.consumePressed('escape')) {
+      const g = match.grapple;
+      if (g) { g.scramble = Math.min(100, (g.scramble || 0) + 8); g.sinceStrike = 60; }
+      match.tryStandUp(p);
+      return;
+    }
     if (Input.consumePressed('break') || Input.consumePressed('up')) { match.tryStandUp(p); return; }
     // Sweep / reversal — F (advance) from bottom in guard or half-guard
     // attempts to reverse top to bottom and end up in side_control.
@@ -299,7 +329,7 @@ function applyP1Input(match) {
   if (p.state === 'front_headlock_top') {
     // Snap-down hunter: D'arce → Anaconda → Guillotine. R/T/E try them in
     // order; release with break (B) returns to neutral.
-    if (Input.consumePressed('break')) { match._endFrontHeadlock('release'); return; }
+    if (Input.consumePressed('escape') || Input.consumePressed('break')) { match._endFrontHeadlock('release'); return; }
     if (Input.consumePressed('submit')) {
       if (match.attemptSubmission(p, 'darce')) return;
       if (match.attemptSubmission(p, 'anaconda')) return;
@@ -310,8 +340,9 @@ function applyP1Input(match) {
     return;
   }
   if (p.state === 'front_headlock_bottom') {
-    // Caught fighter: hammer the escape buttons to break out (UP / break).
-    if (Input.consumePressed('break') || Input.consumePressed('up') || Input.consumePressed('tap_escape')) {
+    // Caught fighter: hammer the escape buttons to break out (UP / break / ESCAPE).
+    if (Input.consumePressed('escape') || Input.consumePressed('break') ||
+        Input.consumePressed('up') || Input.consumePressed('tap_escape')) {
       match._endFrontHeadlock('escape');
       return;
     }
