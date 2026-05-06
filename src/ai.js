@@ -206,9 +206,28 @@ export class AI {
   }
 
   step(self, opp, match) {
-    if (self.state === 'down' || self.state === 'ko' || self.state === 'hit') return null;
+    if (self.state === 'ko' || self.state === 'hit' || self.state === 'getup') return null;
+    if (self.state === 'down') {
+      // Recoverable knockdown — mash to pop back up. KO state won't recover.
+      if (!self.isKO && match.getupBurst) {
+        if (this.subTapCooldown <= 0) {
+          match.getupBurst(self);
+          this.subTapCooldown = 8 + Math.floor(Math.random() * 6);
+        } else this.subTapCooldown--;
+      }
+      return null;
+    }
     // Locked in takedown animation — engine drives the pose, AI must wait.
-    if (self.state === 'takedown_shoot' || self.state === 'takedown_defend') return null;
+    if (self.state === 'takedown_shoot') return null;
+    if (self.state === 'takedown_defend') {
+      // Mash a sprawl attempt while being shot on. Skill-scaled cadence so
+      // wrestlers actually stuff the takedown sometimes.
+      if (this.subTapCooldown <= 0) {
+        match.takedownEscape && match.takedownEscape(self);
+        this.subTapCooldown = 10 + Math.floor(Math.random() * 6);
+      } else this.subTapCooldown--;
+      return null;
+    }
     this.decide(self, opp, match);
     if (this.intentDur > 0) this.intentDur--;
     const dir = opp.x > self.x ? 1 : -1;
